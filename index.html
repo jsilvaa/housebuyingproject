@@ -472,8 +472,11 @@ function ROIDashboard() {
   // request per tick on purpose — splitting state and presence into separate calls would double
   // the Netlify Function invocation volume at a 3s polling interval.
   async function syncWithServer(pushProps) {
+    // Only show the transient "syncing" state for edits the user actually made — routine
+    // background heartbeats/pulls happen every 3s and would otherwise flash the status dot constantly.
+    const isBackgroundTick = !pushProps;
     try {
-      setSyncStatus("syncing");
+      if (!isBackgroundTick) setSyncStatus("syncing");
       const body = {
         sessionId,
         label: `Anonymous ${selfAvatar.name}`,
