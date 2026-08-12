@@ -123,6 +123,13 @@ const FONTS = (
                         box-shadow:0 1px 2px rgba(0,0,0,0.25); cursor:default; }
     .presence-bubble:first-child { margin-left:0; }
     .presence-more { background:var(--muted) !important; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600; }
+    .name-modal-backdrop { position:fixed; inset:0; background:rgba(27,42,65,0.55); display:flex; align-items:center;
+                            justify-content:center; z-index:1000; padding:20px; }
+    .name-modal { background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:24px 26px;
+                   width:100%; max-width:380px; box-shadow:0 12px 32px rgba(0,0,0,0.3); }
+    .name-modal input[type=text] { width:100%; border:1px solid var(--line); border-radius:3px; padding:9px 10px;
+                                     font-size:14px; background:#fff; color:var(--ink-text); }
+    .name-modal input[type=text]:focus { outline:2px solid var(--brass); outline-offset:1px; }
   `}</style>
 );
 const fmtUSD = (n, decimals = 0) =>
@@ -421,6 +428,7 @@ const SEED5 = makeProperty({
 });
 const DEFAULT_PROPERTIES = [SEED, SEED2, SEED3, SEED4, SEED5];
 const STORAGE_KEY = "roiDashboardState.v1";
+const NAME_STORAGE_KEY = "roiDashboardMyName.v1";
 const SYNC_URL = "/api/sync";
 const POLL_INTERVAL_MS = 3000;
 const PUSH_DEBOUNCE_MS = 800;
@@ -462,6 +470,35 @@ function ROIDashboard() {
       ? window.crypto.randomUUID()
       : `s_${Math.random().toString(36).slice(2)}_${Date.now()}`
   );
+  // A typed name (saved per browser) replaces the "Anonymous <Animal>" label everywhere it's shown.
+  const [myName, setMyName] = useState(() => {
+    try {
+      return window.localStorage.getItem(NAME_STORAGE_KEY) || "";
+    } catch (e) {
+      return "";
+    }
+  });
+  const [showNamePrompt, setShowNamePrompt] = useState(() => {
+    try {
+      return !window.localStorage.getItem(NAME_STORAGE_KEY);
+    } catch (e) {
+      return true;
+    }
+  });
+  const [nameDraft, setNameDraft] = useState(myName);
+  const displayLabel = myName.trim() ? myName.trim() : `Anonymous ${selfAvatar.name}`;
+  function saveName(name) {
+    const trimmed = name.trim();
+    try {
+      if (trimmed) {
+        window.localStorage.setItem(NAME_STORAGE_KEY, trimmed);
+      } else {
+        window.localStorage.removeItem(NAME_STORAGE_KEY);
+      }
+    } catch (e) {}
+    setMyName(trimmed);
+    setShowNamePrompt(false);
+  }
   const remoteUpdatedAtRef = useRef(0);
   const pushTimerRef = useRef(null);
   const applyingRemoteRef = useRef(false);
@@ -479,7 +516,7 @@ function ROIDashboard() {
       if (!isBackgroundTick) setSyncStatus("syncing");
       const body = {
         sessionId,
-        label: `Anonymous ${selfAvatar.name}`,
+        label: displayLabel,
         emoji: selfAvatar.emoji,
         color: selfAvatar.color,
       };
@@ -655,6 +692,41 @@ function ROIDashboard() {
   return (
     <div className="rhd">
       {FONTS}
+      {showNamePrompt && (
+        <div className="name-modal-backdrop">
+          <div className="name-modal">
+            <h3 style={{ marginBottom: 6 }}>What's your name?</h3>
+            <p className="note" style={{ marginBottom: 14 }}>
+              Shown to anyone else viewing this dashboard instead of an anonymous animal name. Saved only in this browser —
+              type it again on any other device/browser.
+            </p>
+            <input
+              type="text"
+              autoFocus
+              value={nameDraft}
+              placeholder="e.g. Jose"
+              style={{ fontFamily: "Inter" }}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveName(nameDraft);
+              }}
+            />
+            <div className="field-row" style={{ marginTop: 14, justifyContent: "flex-end", gap: 10 }}>
+              <button type="button" className="refresh-btn" onClick={() => saveName("")}>
+                Stay anonymous
+              </button>
+              <button
+                type="button"
+                className="refresh-btn"
+                style={{ background: "var(--ink)", color: "var(--paper)", borderColor: "var(--ink)" }}
+                onClick={() => saveName(nameDraft)}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="rhd-header">
         <div>
           <span className="eyebrow">House-Hack ROI Ledger</span>
@@ -664,7 +736,17 @@ function ROIDashboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           {onlineUsers.length > 0 && (
             <div className="presence-group">
-              <span className="presence-title">Who's here</span>
+              <span
+                className="presence-title"
+                style={{ cursor: "pointer" }}
+                title="Change your name"
+                onClick={() => {
+                  setNameDraft(myName);
+                  setShowNamePrompt(true);
+                }}
+              >
+                Who's here (✎ {myName.trim() ? "rename" : "add your name"})
+              </span>
               <div className="presence-row">
                 {onlineUsers.slice(0, 6).map((u) => (
                   <span
