@@ -114,6 +114,9 @@ const FONTS = (
                                  font-size:12px; color:var(--muted); margin-bottom:6px; }
     .slider-row .slider-label .year-val { font-family:'IBM Plex Mono',monospace; font-weight:600; color:var(--ink); font-size:14px; }
     .slider-row input[type=range] { width:100%; accent-color: var(--brass); cursor:pointer; }
+    .presence-group { display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+    .presence-title { font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.08em;
+                       color:var(--muted); }
     .presence-row { display:flex; align-items:center; }
     .presence-bubble { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center;
                         font-size:13px; color:#fff; border:2px solid var(--paper); margin-left:-8px;
@@ -657,22 +660,25 @@ function ROIDashboard() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           {onlineUsers.length > 0 && (
-            <div className="presence-row">
-              {onlineUsers.slice(0, 6).map((u) => (
-                <span
-                  key={u.id}
-                  className="presence-bubble"
-                  style={{ background: u.color }}
-                  title={u.label + (u.id === sessionId ? " (you)" : "")}
-                >
-                  {u.emoji}
-                </span>
-              ))}
-              {onlineUsers.length > 6 && (
-                <span className="presence-bubble presence-more" title={`${onlineUsers.length - 6} more`}>
-                  +{onlineUsers.length - 6}
-                </span>
-              )}
+            <div className="presence-group">
+              <span className="presence-title">Who's here</span>
+              <div className="presence-row">
+                {onlineUsers.slice(0, 6).map((u) => (
+                  <span
+                    key={u.id}
+                    className="presence-bubble"
+                    style={{ background: u.color }}
+                    title={u.label + (u.id === sessionId ? " (you)" : "")}
+                  >
+                    {u.emoji}
+                  </span>
+                ))}
+                {onlineUsers.length > 6 && (
+                  <span className="presence-bubble presence-more" title={`${onlineUsers.length - 6} more`}>
+                    +{onlineUsers.length - 6}
+                  </span>
+                )}
+              </div>
             </div>
           )}
           <button type="button" className="refresh-btn" onClick={resetToDefaults} title="Clear saved edits and restore the original values for every property">
@@ -694,11 +700,16 @@ function ROIDashboard() {
             flexShrink: 0,
           }}
         />
-        {syncStatus === "synced" && "Synced — edits here are shared with anyone else who has this page open (see who, top right)."}
+        {syncStatus === "synced" && "Synced — edits here are shared with anyone else who has this page open."}
         {syncStatus === "syncing" && "Syncing…"}
         {syncStatus === "offline" &&
           "Offline / not shared — saved only in this browser. (Shared sync needs the deployed Netlify site, not a locally opened file.)"}
       </p>
+      {onlineUsers.length > 0 && (
+        <p className="note" style={{ marginTop: -10, marginBottom: 14 }}>
+          Who's here right now: {onlineUsers.map((u) => `${u.emoji} ${u.label}${u.id === sessionId ? " (you)" : ""}`).join(", ")}
+        </p>
+      )}
       <div className="tabs">
         {properties.map((p) => (
           <div key={p.id} className={`tab ${p.id === activeId ? "active" : ""}`} onClick={() => setActiveId(p.id)}>
