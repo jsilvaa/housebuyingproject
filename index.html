@@ -114,6 +114,12 @@ const FONTS = (
                                  font-size:12px; color:var(--muted); margin-bottom:6px; }
     .slider-row .slider-label .year-val { font-family:'IBM Plex Mono',monospace; font-weight:600; color:var(--ink); font-size:14px; }
     .slider-row input[type=range] { width:100%; accent-color: var(--brass); cursor:pointer; }
+    .presence-row { display:flex; align-items:center; }
+    .presence-bubble { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+                        font-size:13px; color:#fff; border:2px solid var(--paper); margin-left:-8px;
+                        box-shadow:0 1px 2px rgba(0,0,0,0.25); cursor:default; }
+    .presence-bubble:first-child { margin-left:0; }
+    .presence-more { background:var(--muted) !important; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600; }
   `}</style>
 );
 const fmtUSD = (n, decimals = 0) =>
@@ -412,9 +418,20 @@ const SEED5 = makeProperty({
 });
 const DEFAULT_PROPERTIES = [SEED, SEED2, SEED3, SEED4, SEED5];
 const STORAGE_KEY = "roiDashboardState.v1";
-const SHARED_STATE_URL = "/api/state";
-const POLL_INTERVAL_MS = 8000;
+const SYNC_URL = "/api/sync";
+const POLL_INTERVAL_MS = 3000;
 const PUSH_DEBOUNCE_MS = 800;
+// Anonymous, Google-Docs-style presence avatars — a random one is assigned per browser tab per visit.
+const ANIMALS = [
+  { name: "Fox", emoji: "🦊", color: "#A8402B" },
+  { name: "Owl", emoji: "🦉", color: "#2F5D3A" },
+  { name: "Turtle", emoji: "🐢", color: "#3B6E8F" },
+  { name: "Hedgehog", emoji: "🦔", color: "#8B5E3C" },
+  { name: "Squirrel", emoji: "🐿️", color: "#A9843C" },
+  { name: "Eagle", emoji: "🦅", color: "#5B4B8A" },
+  { name: "Bee", emoji: "🐝", color: "#B8860B" },
+  { name: "Dolphin", emoji: "🐬", color: "#2E86AB" },
+];
 function loadSavedState() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -433,37 +450,46 @@ function ROIDashboard() {
     if (saved && saved.activeId && saved.properties.some((p) => p.id === saved.activeId)) return saved.activeId;
     return (saved ? saved.properties[0] : DEFAULT_PROPERTIES[0]).id;
   });
-  // "offline" = only saved to this browser; "synced" = matches the shared copy everyone sees;
-  // "syncing" = a push/pull is in flight; "error" = the shared endpoint responded but rejected the request.
+  // "offline" = only saved to this browser; "synced" = matches the shared copy everyone sees; "syncing" = a call is in flight.
   const [syncStatus, setSyncStatus] = useState("offline");
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const [selfAvatar] = useState(() => ANIMALS[Math.floor(Math.random() * ANIMALS.length)]);
+  const [sessionId] = useState(() =>
+    window.crypto && window.crypto.randomUUID
+      ? window.crypto.randomUUID()
+      : `s_${Math.random().toString(36).slice(2)}_${Date.now()}`
+  );
   const remoteUpdatedAtRef = useRef(0);
   const pushTimerRef = useRef(null);
   const applyingRemoteRef = useRef(false);
   const didMountRef = useRef(false);
 
-  async function pushSharedState(props, id) {
+  // One call does it all: optionally writes a properties edit, always heartbeats this session's
+  // presence, and always returns the current shared state + who else is online. Kept to a single
+  // request per tick on purpose — splitting state and presence into separate calls would double
+  // the Netlify Function invocation volume at a 3s polling interval.
+  async function syncWithServer(pushProps) {
     try {
       setSyncStatus("syncing");
-      const res = await fetch(SHARED_STATE_URL, {
+      const body = {
+        sessionId,
+        label: `Anonymous ${selfAvatar.name}`,
+        emoji: selfAvatar.emoji,
+        color: selfAvatar.color,
+      };
+      if (pushProps) {
+        body.properties = pushProps.properties;
+        body.activeId = pushProps.activeId;
+      }
+      const res = await fetch(SYNC_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ properties: props, activeId: id }),
+        body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error("push failed");
+      if (!res.ok) throw new Error("sync failed");
       const data = await res.json();
-      remoteUpdatedAtRef.current = data.updatedAt || Date.now();
-      setSyncStatus("synced");
-    } catch (e) {
-      setSyncStatus("offline");
-    }
-  }
-
-  async function pullSharedState() {
-    try {
-      const res = await fetch(SHARED_STATE_URL, { cache: "no-store" });
-      if (!res.ok) throw new Error("pull failed");
-      const data = await res.json();
-      if (data && Array.isArray(data.properties) && data.properties.length > 0 && (data.updatedAt || 0) > remoteUpdatedAtRef.current) {
+      if (Array.isArray(data.onlineUsers)) setOnlineUsers(data.onlineUsers);
+      if (Array.isArray(data.properties) && data.properties.length > 0 && (data.updatedAt || 0) > remoteUpdatedAtRef.current) {
         remoteUpdatedAtRef.current = data.updatedAt;
         applyingRemoteRef.current = true;
         setProperties(data.properties);
@@ -473,14 +499,18 @@ function ROIDashboard() {
       }
       setSyncStatus("synced");
     } catch (e) {
-      setSyncStatus((s) => (s === "syncing" ? "offline" : s));
+      setSyncStatus("offline");
     }
   }
 
-  // Pull the shared copy on load, then keep polling so the other person's edits show up without a manual refresh.
+  // Heartbeat + pull on load, then keep polling so the other person's edits and online status show up
+  // without a manual refresh. Skips ticks while the tab is backgrounded to keep invocation volume down.
   useEffect(() => {
-    pullSharedState();
-    const interval = setInterval(pullSharedState, POLL_INTERVAL_MS);
+    function tick() {
+      if (document.visibilityState === "visible") syncWithServer(null);
+    }
+    tick();
+    const interval = setInterval(tick, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -501,7 +531,7 @@ function ROIDashboard() {
       return;
     }
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
-    pushTimerRef.current = setTimeout(() => pushSharedState(properties, activeId), PUSH_DEBOUNCE_MS);
+    pushTimerRef.current = setTimeout(() => syncWithServer({ properties, activeId }), PUSH_DEBOUNCE_MS);
     return () => {
       if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
     };
@@ -515,7 +545,7 @@ function ROIDashboard() {
     } catch (e) {}
     setProperties(DEFAULT_PROPERTIES);
     setActiveId(DEFAULT_PROPERTIES[0].id);
-    pushSharedState(DEFAULT_PROPERTIES, DEFAULT_PROPERTIES[0].id);
+    syncWithServer({ properties: DEFAULT_PROPERTIES, activeId: DEFAULT_PROPERTIES[0].id });
   }
   const active = properties.find((p) => p.id === activeId) || properties[0];
   const results = useMemo(() => calc(active), [active]);
@@ -626,6 +656,25 @@ function ROIDashboard() {
           <p>FHA 3.5% down · owner-occupied duplex/multi-unit cash flow &amp; return modeling</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          {onlineUsers.length > 0 && (
+            <div className="presence-row">
+              {onlineUsers.slice(0, 6).map((u) => (
+                <span
+                  key={u.id}
+                  className="presence-bubble"
+                  style={{ background: u.color }}
+                  title={u.label + (u.id === sessionId ? " (you)" : "")}
+                >
+                  {u.emoji}
+                </span>
+              ))}
+              {onlineUsers.length > 6 && (
+                <span className="presence-bubble presence-more" title={`${onlineUsers.length - 6} more`}>
+                  +{onlineUsers.length - 6}
+                </span>
+              )}
+            </div>
+          )}
           <button type="button" className="refresh-btn" onClick={resetToDefaults} title="Clear saved edits and restore the original values for every property">
             ↺ Reset to defaults
           </button>
@@ -645,7 +694,7 @@ function ROIDashboard() {
             flexShrink: 0,
           }}
         />
-        {syncStatus === "synced" && "Synced — edits here are shared with anyone else who has this page open."}
+        {syncStatus === "synced" && "Synced — edits here are shared with anyone else who has this page open (see who, top right)."}
         {syncStatus === "syncing" && "Syncing…"}
         {syncStatus === "offline" &&
           "Offline / not shared — saved only in this browser. (Shared sync needs the deployed Netlify site, not a locally opened file.)"}
