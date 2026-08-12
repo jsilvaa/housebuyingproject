@@ -453,7 +453,7 @@ function ROIDashboard() {
     [results.loanAmt, active.rate, active.termYears]
   );
   const breakEven = useMemo(() => computeBreakEven(active, results), [active, results]);
-  const [showAmort, setShowAmort] = useState(true);
+  const [showAmort, setShowAmort] = useState(false);
   const previewYear = Math.min(Math.max(Math.round(active.breakEvenPreviewYears || 5), 1), breakEven.maxYears);
   const previewRow = breakEven.series[previewYear - 1];
   function update(field, value) {
