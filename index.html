@@ -12,7 +12,7 @@
 <body>
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
-const { useState, useMemo, useEffect } = React;
+const { useState, useMemo, useEffect, useRef } = React;
 const FONTS = (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
@@ -412,6 +412,9 @@ const SEED5 = makeProperty({
 });
 const DEFAULT_PROPERTIES = [SEED, SEED2, SEED3, SEED4, SEED5];
 const STORAGE_KEY = "roiDashboardState.v1";
+const SHARED_STATE_URL = "/api/state";
+const POLL_INTERVAL_MS = 8000;
+const PUSH_DEBOUNCE_MS = 800;
 function loadSavedState() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -430,20 +433,89 @@ function ROIDashboard() {
     if (saved && saved.activeId && saved.properties.some((p) => p.id === saved.activeId)) return saved.activeId;
     return (saved ? saved.properties[0] : DEFAULT_PROPERTIES[0]).id;
   });
+  // "offline" = only saved to this browser; "synced" = matches the shared copy everyone sees;
+  // "syncing" = a push/pull is in flight; "error" = the shared endpoint responded but rejected the request.
+  const [syncStatus, setSyncStatus] = useState("offline");
+  const remoteUpdatedAtRef = useRef(0);
+  const pushTimerRef = useRef(null);
+  const applyingRemoteRef = useRef(false);
+  const didMountRef = useRef(false);
+
+  async function pushSharedState(props, id) {
+    try {
+      setSyncStatus("syncing");
+      const res = await fetch(SHARED_STATE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ properties: props, activeId: id }),
+      });
+      if (!res.ok) throw new Error("push failed");
+      const data = await res.json();
+      remoteUpdatedAtRef.current = data.updatedAt || Date.now();
+      setSyncStatus("synced");
+    } catch (e) {
+      setSyncStatus("offline");
+    }
+  }
+
+  async function pullSharedState() {
+    try {
+      const res = await fetch(SHARED_STATE_URL, { cache: "no-store" });
+      if (!res.ok) throw new Error("pull failed");
+      const data = await res.json();
+      if (data && Array.isArray(data.properties) && data.properties.length > 0 && (data.updatedAt || 0) > remoteUpdatedAtRef.current) {
+        remoteUpdatedAtRef.current = data.updatedAt;
+        applyingRemoteRef.current = true;
+        setProperties(data.properties);
+        if (data.activeId && data.properties.some((p) => p.id === data.activeId)) {
+          setActiveId(data.activeId);
+        }
+      }
+      setSyncStatus("synced");
+    } catch (e) {
+      setSyncStatus((s) => (s === "syncing" ? "offline" : s));
+    }
+  }
+
+  // Pull the shared copy on load, then keep polling so the other person's edits show up without a manual refresh.
+  useEffect(() => {
+    pullSharedState();
+    const interval = setInterval(pullSharedState, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Save locally always; push to the shared endpoint (debounced) for any edit that didn't just come from a pull.
   useEffect(() => {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ properties, activeId }));
     } catch (e) {
       // localStorage unavailable (private browsing, etc.) — edits just won't persist across reloads
     }
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    if (applyingRemoteRef.current) {
+      applyingRemoteRef.current = false;
+      return;
+    }
+    if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = setTimeout(() => pushSharedState(properties, activeId), PUSH_DEBOUNCE_MS);
+    return () => {
+      if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [properties, activeId]);
+
   function resetToDefaults() {
-    if (!window.confirm("Reset all properties back to their original saved values? This can't be undone.")) return;
+    if (!window.confirm("Reset all properties back to their original saved values for everyone? This can't be undone.")) return;
     try {
       window.localStorage.removeItem(STORAGE_KEY);
     } catch (e) {}
     setProperties(DEFAULT_PROPERTIES);
     setActiveId(DEFAULT_PROPERTIES[0].id);
+    pushSharedState(DEFAULT_PROPERTIES, DEFAULT_PROPERTIES[0].id);
   }
   const active = properties.find((p) => p.id === activeId) || properties[0];
   const results = useMemo(() => calc(active), [active]);
@@ -565,10 +637,18 @@ function ROIDashboard() {
           </div>
         </div>
       </div>
-      <p className="note" style={{ marginTop: -10, marginBottom: 14 }}>
-        Edits you make here (price, rent, sliders, new tabs, etc.) are saved automatically in this browser and reload with
-        the page. They live only on this device/browser — editing the .jsx or .html source file directly is what updates
-        the baseline everyone starts from.
+      <p className="note" style={{ marginTop: -10, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+        <span
+          style={{
+            display: "inline-block", width: 7, height: 7, borderRadius: "50%",
+            background: syncStatus === "synced" ? "#2F5D3A" : syncStatus === "syncing" ? "#A9843C" : "#A8402B",
+            flexShrink: 0,
+          }}
+        />
+        {syncStatus === "synced" && "Synced — edits here are shared with anyone else who has this page open."}
+        {syncStatus === "syncing" && "Syncing…"}
+        {syncStatus === "offline" &&
+          "Offline / not shared — saved only in this browser. (Shared sync needs the deployed Netlify site, not a locally opened file.)"}
       </p>
       <div className="tabs">
         {properties.map((p) => (
