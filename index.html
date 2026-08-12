@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>House-Hack ROI Ledger</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js" crossorigin></script>
+<style>body{margin:0;background:#F7F4EC;} #root{max-width:1200px;margin:0 auto;padding:12px;}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect } = React;
+const FONTS = (
+  <style>{`
+    @import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+    .rhd { --ink:#1B2A41; --paper:#F7F4EC; --paper2:#EFEAD9; --line:#DCD5C0;
+           --brass:#A9843C; --green:#2F5D3A; --red:#A8402B; --ink-text:#2B2B28; --muted:#6B675C;
+           font-family:'Inter',sans-serif; color:var(--ink-text); background:var(--paper);
+           padding: 28px 20px 40px; border-radius: 4px; }
+    .rhd * { box-sizing: border-box; }
+    .rhd h1,.rhd h2,.rhd h3 { font-family:'Roboto Slab',serif; margin:0; color:var(--ink); }
+    .rhd .mono { font-family:'IBM Plex Mono',monospace; font-variant-numeric: tabular-nums; }
+    .rhd .eyebrow { font-family:'IBM Plex Mono',monospace; text-transform:uppercase; letter-spacing:.12em;
+                    font-size:11px; color:var(--brass); font-weight:600; }
+    .rhd-header { display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px;
+                  border-bottom: 2px solid var(--ink); padding-bottom:14px; margin-bottom:18px; }
+    .rhd-header h1 { font-size:26px; }
+    .rhd-header p { margin:4px 0 0; color:var(--muted); font-size:13px; }
+    .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:18px; align-items:center; }
+    .tab { font-family:'IBM Plex Mono',monospace; font-size:12px; padding:7px 12px; border:1px solid var(--line);
+           background:var(--paper2); border-radius:3px 3px 0 0; cursor:pointer; color:var(--muted); white-space:nowrap; }
+    .tab.active { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+    .tab-add { font-family:'IBM Plex Mono',monospace; font-size:12px; padding:7px 12px; border:1px dashed var(--brass);
+               background:transparent; border-radius:3px; cursor:pointer; color:var(--brass); }
+    .tab-del { margin-left:8px; cursor:pointer; opacity:.6; }
+    .tab-del:hover{ opacity:1; }
+    .grid2 { display:grid; grid-template-columns: 1.05fr 0.95fr; gap:22px; }
+    @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+    .card { background:#fff; border:1px solid var(--line); border-radius:6px; padding:18px 20px; margin-bottom:16px; }
+    .card h3 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:14px;
+               display:flex; align-items:center; gap:8px; }
+    .card h3::after { content:''; flex:1; height:1px; background:var(--line); }
+    .field-row { display:flex; gap:10px; margin-bottom:10px; align-items:center; }
+    .field { flex:1; }
+    .field label { display:block; font-size:11px; color:var(--muted); margin-bottom:3px; }
+    .field label .tip { cursor:help; color:var(--brass); }
+    .field input, .field select {
+      width:100%; border:1px solid var(--line); border-radius:3px; padding:7px 8px; font-size:13.5px;
+      font-family:'IBM Plex Mono',monospace; background:var(--paper); color:var(--ink-text);
+    }
+    .field input:focus, .field select:focus { outline:2px solid var(--brass); outline-offset:1px; }
+    .field.narrow { max-width:92px; flex: 0 0 92px; }
+    .unit-row { display:flex; gap:10px; align-items:center; margin-bottom:8px; padding:8px 10px;
+                background:var(--paper2); border-radius:4px; }
+    .unit-row input[type=text] { border:none; background:transparent; font-family:'Inter'; font-weight:600;
+                                  font-size:13px; padding:2px; width:100%; }
+    .unit-row .rent-input { width:100px; }
+    .occ-toggle { font-family:'IBM Plex Mono',monospace; font-size:10.5px; padding:4px 8px; border-radius:12px;
+                  border:1px solid var(--line); cursor:pointer; white-space:nowrap; background:#fff; }
+    .occ-toggle.on { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+    .ledger-line { display:flex; align-items:baseline; gap:6px; padding:5px 0; font-size:13.5px; }
+    .ledger-line .label { color:var(--ink-text); }
+    .ledger-line .dots { flex:1; border-bottom:1px dotted var(--line); margin-bottom:4px; }
+    .ledger-line .val { font-weight:600; }
+    .ledger-line.total { border-top:1.5px solid var(--ink); margin-top:6px; padding-top:9px; font-size:15px; }
+    .ledger-line.total .val { color:var(--ink); }
+    .ledger-line.sub .label { color: var(--muted); font-size: 12.5px; }
+    .metric-grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:6px; }
+    .metric { border:1px solid var(--line); border-radius:6px; padding:12px 14px; background:var(--paper2); }
+    .metric .eyebrow { display:block; margin-bottom:4px; }
+    .metric .value { font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600; color:var(--ink); }
+    .metric .value.pos { color: var(--green); }
+    .metric .value.neg { color: var(--red); }
+    .metric .sub { font-size:11px; color:var(--muted); margin-top:2px; }
+    .badge-seal { width:86px; height:86px; border-radius:50%; border:2px solid var(--brass); display:flex;
+                  flex-direction:column; align-items:center; justify-content:center; flex-shrink:0;
+                  background: repeating-radial-gradient(circle, transparent 0 3px, rgba(169,132,60,0.06) 3px 4px); }
+    .badge-seal .num { font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:18px; color:var(--ink); }
+    .badge-seal .lbl { font-size:8px; text-transform:uppercase; letter-spacing:.06em; color:var(--brass); margin-top:2px; text-align:center; }
+    .closing-card { background: var(--ink); color: var(--paper); border-radius:6px; padding:20px 22px; }
+    .closing-card h3 { color: var(--paper); }
+    .closing-card h3::after { background: rgba(247,244,236,0.25); }
+    .closing-card .ledger-line .dots { border-bottom-color: rgba(247,244,236,0.25); }
+    .closing-card .ledger-line .label { color: rgba(247,244,236,0.85); }
+    .closing-card .ledger-line .val { color: var(--paper); }
+    .closing-card .ledger-line.total { border-top-color: var(--brass); }
+    .closing-card .ledger-line.total .val { color: var(--brass); font-size:19px; }
+    table.compare { width:100%; border-collapse:collapse; font-size:12.5px; }
+    table.compare th { text-align:right; font-family:'IBM Plex Mono',monospace; font-size:10.5px;
+                        text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600;
+                        padding:8px 10px; border-bottom:2px solid var(--ink); }
+    table.compare th:first-child, table.compare td:first-child { text-align:left; }
+    table.compare td { text-align:right; padding:9px 10px; border-bottom:1px solid var(--line);
+                        font-family:'IBM Plex Mono',monospace; }
+    table.compare tr:hover td { background: var(--paper2); }
+    table.compare td.pos { color: var(--green); font-weight:600; }
+    table.compare td.neg { color: var(--red); font-weight:600; }
+    .note { font-size:11.5px; color:var(--muted); line-height:1.5; margin-top:4px; }
+    .refresh-btn { font-family:'IBM Plex Mono',monospace; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em;
+                    background:var(--paper2); border:1px solid var(--brass); color:var(--ink); border-radius:4px;
+                    padding:7px 12px; cursor:pointer; }
+    .refresh-btn:hover { background:var(--brass); color:var(--paper); }
+    .link-pill { font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:.04em;
+                  background:var(--paper2); border:1px solid var(--line); color:var(--ink); border-radius:999px;
+                  padding:5px 12px; text-decoration:none; display:inline-block; }
+    .link-pill:hover { border-color:var(--brass); color:var(--brass); }
+    .assumption-strip { display:flex; gap:16px; flex-wrap:wrap; font-size:11px; color:var(--muted);
+                         font-family:'IBM Plex Mono',monospace; margin-bottom:18px; }
+    .slider-row { margin: 10px 0 16px; }
+    .slider-row .slider-label { display:flex; justify-content:space-between; align-items:baseline;
+                                 font-size:12px; color:var(--muted); margin-bottom:6px; }
+    .slider-row .slider-label .year-val { font-family:'IBM Plex Mono',monospace; font-weight:600; color:var(--ink); font-size:14px; }
+    .slider-row input[type=range] { width:100%; accent-color: var(--brass); cursor:pointer; }
+  `}</style>
+);
+const fmtUSD = (n, decimals = 0) =>
+  (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+const fmtPct = (n, decimals = 2) => `${n.toFixed(decimals)}%`;
+function monthlyPI(loanAmount, annualRatePct, years) {
+  const r = annualRatePct / 100 / 12;
+  const n = years * 12;
+  if (r === 0) return loanAmount / n;
+  return (loanAmount * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+}
+function remainingBalance(loanAmount, annualRatePct, years, monthsElapsed) {
+  const r = annualRatePct / 100 / 12;
+  const n = years * 12;
+  const pmt = monthlyPI(loanAmount, annualRatePct, years);
+  if (r === 0) return Math.max(0, loanAmount - pmt * monthsElapsed);
+  const bal = loanAmount * Math.pow(1 + r, monthsElapsed) - pmt * ((Math.pow(1 + r, monthsElapsed) - 1) / r);
+  return Math.max(0, bal);
+}
+function buildAmortizationSchedule(loanAmount, annualRatePct, years) {
+  const pmt = monthlyPI(loanAmount, annualRatePct, years);
+  const schedule = [];
+  const cappedYears = Math.max(0, Math.min(years, 100)); // guard against pathological term input
+  for (let year = 1; year <= cappedYears; year++) {
+    const startBalance = remainingBalance(loanAmount, annualRatePct, years, (year - 1) * 12);
+    const endBalance = remainingBalance(loanAmount, annualRatePct, years, year * 12);
+    const totalPaid = pmt * 12;
+    const principalPaid = startBalance - endBalance;
+    const interestPaid = totalPaid - principalPaid;
+    schedule.push({ year, startBalance, endBalance, principalPaid, interestPaid, totalPaid });
+  }
+  return schedule;
+}
+function calc(p) {
+  const loanBase = p.price * (1 - p.downPct / 100);
+  const downAmt = p.price * (p.downPct / 100);
+  const ufmip = loanBase * (p.mipUpfrontPct / 100);
+  const loanAmt = loanBase + ufmip;
+  const pi = monthlyPI(loanAmt, p.rate, p.termYears);
+  const tax = p.taxAnnual / 12;
+  const ins = p.insuranceAnnual / 12;
+  const mip = (loanAmt * (p.mipAnnualPct / 100)) / 12;
+  const piti = pi + tax + ins + mip + p.hoaMonthly;
+  const grossPotentialRent = p.units.reduce((s, u) => s + (Number(u.rent) || 0), 0);
+  const collectedRent = p.units.reduce((s, u) => s + (u.ownerOccupied ? 0 : Number(u.rent) || 0), 0);
+  const opExRate = (p.maintenancePct + p.vacancyPct + p.capexPct + p.mgmtPct) / 100;
+  const opExOnCollected = collectedRent * opExRate;
+  const monthlyCashFlow = collectedRent - opExOnCollected - piti;
+  const annualCashFlow = monthlyCashFlow * 12;
+  const closingCosts = p.price * (p.closingCostPct / 100);
+  const dpaAmount = p.dpaCoversFullDown ? downAmt : (p.dpaAmount || 0);
+  const cashToClose = Math.max(0, downAmt + closingCosts - dpaAmount);
+  const secondLoanBalance = dpaAmount;
+  const cashOnCash = cashToClose > 0 ? (annualCashFlow / cashToClose) * 100 : 0;
+  const annualGrossRent = grossPotentialRent * 12;
+  const annualOpEx = annualGrossRent * opExRate + p.taxAnnual + p.insuranceAnnual + p.hoaMonthly * 12;
+  const noi = annualGrossRent - annualOpEx;
+  const capRate = p.price > 0 ? (noi / p.price) * 100 : 0;
+  const dscr = piti * 12 > 0 ? noi / (piti * 12) : 0;
+  const outOfPocket = piti + opExOnCollected - collectedRent;
+  const effectiveCost = outOfPocket - p.avoidedRentMonthly;
+  // --- Exit scenario: hold p.holdYears, sell, compare vs. continuing to fully rent ---
+  const holdYears = (p.holdYears !== undefined && p.holdYears !== null && p.holdYears !== "") ? p.holdYears : 3;
+  const appreciationPct = (p.appreciationPct !== undefined && p.appreciationPct !== null) ? p.appreciationPct : 4;
+  const sellingCostPct = (p.sellingCostPct !== undefined && p.sellingCostPct !== null) ? p.sellingCostPct : 7;
+  const monthsHeld = holdYears * 12;
+  const futureValue = p.price * Math.pow(1 + appreciationPct / 100, holdYears);
+  const loanBalanceAtExit = remainingBalance(loanAmt, p.rate, p.termYears, monthsHeld);
+  const secondLoanAtExit = secondLoanBalance * (1 + (p.dpaRatePct / 100) * holdYears); // simple interest DPA
+  const sellingCosts = futureValue * (sellingCostPct / 100);
+  const equityAtSale = futureValue - loanBalanceAtExit - secondLoanAtExit - sellingCosts;
+  const totalAppreciationGain = futureValue - p.price;
+  // Alternative: keep the property, rent out the owner-occupied unit(s) too (fully rented)
+  const rentEscalationPct = (p.rentEscalationPct !== undefined && p.rentEscalationPct !== null) ? p.rentEscalationPct : 1;
+  const fullyRentedGrossRent = grossPotentialRent; // all units rented, including the one you currently occupy, at today's rent
+  const fullyRentedOpEx = fullyRentedGrossRent * opExRate;
+  const fullyRentedMonthlyCashFlow = fullyRentedGrossRent - fullyRentedOpEx - piti;
+  const fullyRentedAnnualCashFlow = fullyRentedMonthlyCashFlow * 12;
+  // Same fully-rented scenario, but with rent escalated to the end of the hold period
+  const escalatedGrossRent = grossPotentialRent * Math.pow(1 + rentEscalationPct / 100, holdYears);
+  const escalatedOpEx = escalatedGrossRent * opExRate;
+  const escalatedMonthlyCashFlow = escalatedGrossRent - escalatedOpEx - piti;
+  const escalatedAnnualCashFlow = escalatedMonthlyCashFlow * 12;
+  return {
+    loanAmt, pi, tax, ins, mip, piti, downAmt, ufmip, closingCosts, cashToClose,
+    grossPotentialRent, collectedRent, opExOnCollected, monthlyCashFlow, annualCashFlow,
+    cashOnCash, noi, capRate, dscr, outOfPocket, effectiveCost, dpaAmount, secondLoanBalance,
+    holdYears, appreciationPct, sellingCostPct, futureValue, loanBalanceAtExit, secondLoanAtExit,
+    sellingCosts, equityAtSale, totalAppreciationGain, fullyRentedMonthlyCashFlow, fullyRentedAnnualCashFlow,
+    rentEscalationPct, escalatedGrossRent, escalatedMonthlyCashFlow, escalatedAnnualCashFlow,
+  };
+}
+function computeBreakEven(p, results) {
+  const maxYears = Math.max(1, Math.min(p.termYears || 30, 30));
+  const outOfPocketBeyondRent = results.outOfPocket - p.avoidedRentMonthly; // monthly; negative means owning is already cheaper than renting
+  const series = [];
+  let breakEvenYear = null;
+  for (let year = 1; year <= maxYears; year++) {
+    const futureValue = p.price * Math.pow(1 + p.appreciationPct / 100, year);
+    const loanBalance = remainingBalance(results.loanAmt, p.rate, p.termYears, year * 12);
+    const secondLoanAtYear = results.secondLoanBalance * (1 + (p.dpaRatePct / 100) * year);
+    const sellingCosts = futureValue * (p.sellingCostPct / 100);
+    const equity = futureValue - loanBalance - secondLoanAtYear - sellingCosts;
+    const cumulativeExtraCash = results.cashToClose + outOfPocketBeyondRent * 12 * year;
+    const netPosition = equity - cumulativeExtraCash;
+    series.push({ year, futureValue, equity, cumulativeExtraCash, netPosition });
+    if (breakEvenYear === null && netPosition >= 0) breakEvenYear = year;
+  }
+  return { series, breakEvenYear, maxYears };
+}
+function makeProperty(overrides = {}) {
+  return {
+    id: Math.random().toString(36).slice(2, 9),
+    nickname: "New Property",
+    address: "",
+    price: 900000,
+    downPct: 3.5,
+    dpaAmount: 0,
+    rate: 6.375,
+    termYears: 30,
+    taxAnnual: 11250,
+    insuranceAnnual: 3600,
+    hoaMonthly: 0,
+    mipUpfrontPct: 1.75,
+    mipAnnualPct: 0.55,
+    closingCostPct: 2.6,
+    maintenancePct: 5,
+    vacancyPct: 5,
+    capexPct: 5,
+    mgmtPct: 0,
+    ownerAName: "You",
+    ownerBName: "Co-owner",
+    ownerASplitPct: 50,
+    avoidedRentMonthly: 0,
+    dpaCoversFullDown: false,
+    dpaRatePct: 0,
+    appreciationPct: 4, // annual home price appreciation assumption, East Bay long-run average ballpark
+    holdYears: 3,
+    sellingCostPct: 7, // agent commission + closing costs on sale, typical combined ~6-8%
+    rentEscalationPct: 1, // assumed annual rent growth rate over the hold period
+    breakEvenPreviewYears: 5, // which year the break-even slider is previewing
+    rentCompsDate: "",
+    units: [
+      { name: "Unit 1", rent: 0, ownerOccupied: true },
+      { name: "Unit 2", rent: 0, ownerOccupied: false },
+    ],
+    ...overrides,
+  };
+}
+const SEED = makeProperty({
+  nickname: "Delaware St",
+  address: "1308 Delaware St, Berkeley, CA 94702",
+  price: 995000,
+  downPct: 3.5,
+  dpaAmount: 0,
+  rate: 6.375,
+  termYears: 30,
+  taxAnnual: 12437,
+  insuranceAnnual: 4000,
+  hoaMonthly: 0,
+  mipUpfrontPct: 1.75,
+  mipAnnualPct: 0.55,
+  closingCostPct: 2.6,
+  maintenancePct: 3, // optimistic — clean inspection, seismic retrofit already done
+  vacancyPct: 5,
+  capexPct: 2, // optimistic — new water heater already installed, no major deferred big-ticket items
+  mgmtPct: 0,
+  ownerAName: "Jose",
+  ownerBName: "Aurelio",
+  ownerASplitPct: 50,
+  avoidedRentMonthly: 5000,
+  dpaCoversFullDown: true,
+  dpaRatePct: 1,
+  units: [
+    { name: "Unit 1 — 3bd/1.5ba (you two live here)", rent: 4000, ownerOccupied: true },
+    { name: "Unit 2 — 3bd/1.5ba (rented out)", rent: 4000, ownerOccupied: false },
+  ],
+  rentCompsDate: "Aug 10, 2026",
+});
+const SEED2 = makeProperty({
+  nickname: "Moeser Ln",
+  address: "7433 Moeser Ln, El Cerrito, CA 94530",
+  price: 1188000,
+  downPct: 3.5,
+  rate: 6.375,
+  termYears: 30,
+  taxAnnual: 14850, // Prop 13 reassessed to purchase price, ~1.25% effective rate for Contra Costa
+  insuranceAnnual: 4500, // conservative estimate — East Bay hills wildfire exposure; confirm with an actual quote
+  hoaMonthly: 0,
+  mipUpfrontPct: 1.75,
+  mipAnnualPct: 0.55,
+  closingCostPct: 2.6,
+  maintenancePct: 3, // optimistic — recently remodeled, new kitchen/baths/roof/panels, low deferred maintenance
+  vacancyPct: 5,
+  capexPct: 2, // optimistic — new roof and updated electrical already done, fewer big-ticket items pending
+  mgmtPct: 0,
+  ownerAName: "Jose",
+  ownerBName: "Aurelio",
+  ownerASplitPct: 50,
+  avoidedRentMonthly: 5000,
+  dpaCoversFullDown: true,
+  dpaRatePct: 1,
+  units: [
+    { name: "Main house — 3bd/2ba (you two live here)", rent: 4200, ownerOccupied: true },
+    { name: "ADU — 1bd/1ba, private entrance (rented)", rent: 2400, ownerOccupied: false },
+  ],
+  rentCompsDate: "Aug 10, 2026",
+});
+const SEED3 = makeProperty({
+  nickname: "El Centro Rd (duplex)",
+  address: "679 El Centro Rd, El Sobrante, CA 94803",
+  price: 975000,
+  downPct: 3.5,
+  rate: 6.375,
+  termYears: 30,
+  taxAnnual: 12188, // Prop 13 reassessed, ~1.25% effective rate for Contra Costa
+  insuranceAnnual: 3600, // conservative placeholder — confirm with an actual quote; wildfire zone risk applies here too
+  hoaMonthly: 0,
+  mipUpfrontPct: 1.75,
+  mipAnnualPct: 0.55,
+  closingCostPct: 2.6,
+  maintenancePct: 5,
+  vacancyPct: 5,
+  capexPct: 5,
+  mgmtPct: 0,
+  ownerAName: "Jose",
+  ownerBName: "Aurelio",
+  ownerASplitPct: 50,
+  avoidedRentMonthly: 5000,
+  dpaCoversFullDown: true,
+  dpaRatePct: 1,
+  units: [
+    { name: "Front house — 3bd/2ba, remodeled (you two live here)", rent: 3000, ownerOccupied: true },
+    { name: "Rear house — 3bd/2ba, remodeled (rented)", rent: 3000, ownerOccupied: false },
+  ],
+  rentCompsDate: "Aug 10, 2026",
+});
+const SEED4 = makeProperty({
+  nickname: "Hilltop Dr (SFH, no rental)",
+  address: "5161 Hilltop Rd, El Sobrante, CA 94803",
+  price: 649000,
+  downPct: 3.5,
+  rate: 6.375,
+  termYears: 30,
+  taxAnnual: 8113, // Prop 13 reassessed, ~1.25% effective rate for Contra Costa
+  insuranceAnnual: 3200, // conservative placeholder — confirm with an actual quote
+  hoaMonthly: 0,
+  mipUpfrontPct: 1.75,
+  mipAnnualPct: 0.55,
+  closingCostPct: 2.6,
+  maintenancePct: 5,
+  vacancyPct: 5,
+  capexPct: 5,
+  mgmtPct: 0,
+  ownerAName: "Jose",
+  ownerBName: "Aurelio",
+  ownerASplitPct: 50,
+  avoidedRentMonthly: 5000,
+  dpaCoversFullDown: true,
+  dpaRatePct: 1,
+  units: [
+    { name: "Whole house — 3bd/2ba (you two live here, no tenant)", rent: 3000, ownerOccupied: true },
+  ],
+  rentCompsDate: "Aug 10, 2026",
+});
+const SEED5 = makeProperty({
+  nickname: "701 40th St (4-plex)",
+  address: "701 40th St, Richmond, CA 94805",
+  price: 999995,
+  downPct: 3.5,
+  rate: 6.375,
+  termYears: 30,
+  taxAnnual: 12500, // Prop 13 reassessed to purchase price, ~1.25% effective rate for Contra Costa
+  insuranceAnnual: 4200, // conservative placeholder — confirm with an actual quote; 4-unit building may carry a higher premium than a duplex/SFH
+  hoaMonthly: 0,
+  mipUpfrontPct: 1.75,
+  mipAnnualPct: 0.55,
+  closingCostPct: 2.6,
+  maintenancePct: 5,
+  vacancyPct: 5,
+  capexPct: 5,
+  mgmtPct: 0,
+  ownerAName: "Jose",
+  ownerBName: "Aurelio",
+  ownerASplitPct: 50,
+  avoidedRentMonthly: 5000,
+  dpaCoversFullDown: true,
+  dpaRatePct: 1,
+  units: [
+    { name: "Unit 701 — 1bd/1ba (currently tenant-occupied)", rent: 2002, ownerOccupied: false },
+    { name: "Unit 703 — 1bd/1ba (currently tenant-occupied)", rent: 2002, ownerOccupied: false },
+    { name: "Unit 705 — 1bd/1ba (you'd occupy — tenant would need to vacate before move-in, FHA owner-occ rule)", rent: 1844, ownerOccupied: true },
+    { name: "Unit 707 — 1bd/1ba (currently tenant-occupied)", rent: 1900, ownerOccupied: false },
+  ],
+  rentCompsDate: "Aug 11, 2026 — rents pulled from the active Compass/MLS listing (#41135209), not third-party comps",
+});
+const DEFAULT_PROPERTIES = [SEED, SEED2, SEED3, SEED4, SEED5];
+const STORAGE_KEY = "roiDashboardState.v1";
+function loadSavedState() {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.properties) || parsed.properties.length === 0) return null;
+    return parsed;
+  } catch (e) {
+    return null;
+  }
+}
+function ROIDashboard() {
+  const saved = useMemo(() => loadSavedState(), []);
+  const [properties, setProperties] = useState(() => (saved ? saved.properties : DEFAULT_PROPERTIES));
+  const [activeId, setActiveId] = useState(() => {
+    if (saved && saved.activeId && saved.properties.some((p) => p.id === saved.activeId)) return saved.activeId;
+    return (saved ? saved.properties[0] : DEFAULT_PROPERTIES[0]).id;
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ properties, activeId }));
+    } catch (e) {
+      // localStorage unavailable (private browsing, etc.) — edits just won't persist across reloads
+    }
+  }, [properties, activeId]);
+  function resetToDefaults() {
+    if (!window.confirm("Reset all properties back to their original saved values? This can't be undone.")) return;
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {}
+    setProperties(DEFAULT_PROPERTIES);
+    setActiveId(DEFAULT_PROPERTIES[0].id);
+  }
+  const active = properties.find((p) => p.id === activeId) || properties[0];
+  const results = useMemo(() => calc(active), [active]);
+  const allResults = useMemo(() => properties.map((p) => ({ p, r: calc(p) })), [properties]);
+  const amortSchedule = useMemo(
+    () => buildAmortizationSchedule(results.loanAmt, active.rate, active.termYears),
+    [results.loanAmt, active.rate, active.termYears]
+  );
+  const breakEven = useMemo(() => computeBreakEven(active, results), [active, results]);
+  const [showAmort, setShowAmort] = useState(true);
+  const previewYear = Math.min(Math.max(Math.round(active.breakEvenPreviewYears || 5), 1), breakEven.maxYears);
+  const previewRow = breakEven.series[previewYear - 1];
+  function update(field, value) {
+    setProperties((prev) => prev.map((p) => (p.id === active.id ? { ...p, [field]: value } : p)));
+  }
+  function updateAll(field, value) {
+    setProperties((prev) => prev.map((p) => ({ ...p, [field]: value })));
+  }
+  function updateUnit(idx, field, value) {
+    setProperties((prev) =>
+      prev.map((p) =>
+        p.id === active.id
+          ? { ...p, units: p.units.map((u, i) => (i === idx ? { ...u, [field]: value } : u)) }
+          : p
+      )
+    );
+  }
+  function addUnit() {
+    setProperties((prev) =>
+      prev.map((p) =>
+        p.id === active.id
+          ? { ...p, units: [...p.units, { name: `Unit ${p.units.length + 1}`, rent: 0, ownerOccupied: false }] }
+          : p
+      )
+    );
+  }
+  function removeUnit(idx) {
+    setProperties((prev) =>
+      prev.map((p) => (p.id === active.id ? { ...p, units: p.units.filter((_, i) => i !== idx) } : p))
+    );
+  }
+  function addProperty() {
+    const np = makeProperty({ nickname: `Property ${properties.length + 1}` });
+    setProperties((prev) => [...prev, np]);
+    setActiveId(np.id);
+  }
+  function removeProperty(id) {
+    if (properties.length === 1) return;
+    setProperties((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      if (id === activeId) setActiveId(next[0].id);
+      return next;
+    });
+  }
+  const numField = (label, field, opts = {}) => (
+    <div className="field">
+      <label>
+        {label}
+        {opts.tooltip && (
+          <span className="tip" title={opts.tooltip}> ⓘ</span>
+        )}
+      </label>
+      <input
+        type="number"
+        step={opts.step || "any"}
+        value={active[field]}
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (raw === "" || raw === "-") {
+            // Let the field go blank while typing/backspacing, instead of snapping to 0.
+            if (opts.syncAll) {
+              updateAll(field, raw);
+            } else {
+              update(field, raw);
+            }
+            return;
+          }
+          const parsed = opts.parseInt ? parseInt(raw, 10) : parseFloat(raw);
+          if (Number.isNaN(parsed)) return;
+          if (opts.syncAll) {
+            updateAll(field, parsed);
+          } else {
+            update(field, parsed);
+          }
+        }}
+        onBlur={(e) => {
+          // If the field was left blank (or just "-"), settle it back to 0 once the user clicks away.
+          const raw = e.target.value;
+          if (raw === "" || raw === "-") {
+            if (opts.syncAll) {
+              updateAll(field, 0);
+            } else {
+              update(field, 0);
+            }
+          }
+        }}
+      />
+    </div>
+  );
+  const holdYearRounded = Math.round((active.holdYears !== undefined && active.holdYears !== null && active.holdYears !== "") ? active.holdYears : 3);
+  return (
+    <div className="rhd">
+      {FONTS}
+      <div className="rhd-header">
+        <div>
+          <span className="eyebrow">House-Hack ROI Ledger</span>
+          <h1>Multifamily Purchase Analyzer</h1>
+          <p>FHA 3.5% down · owner-occupied duplex/multi-unit cash flow &amp; return modeling</p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <button type="button" className="refresh-btn" onClick={resetToDefaults} title="Clear saved edits and restore the original values for every property">
+            ↺ Reset to defaults
+          </button>
+          <div className="badge-seal">
+            <div className="num" style={{ color: results.cashOnCash >= 0 ? "#2F5D3A" : "#A8402B" }}>
+              {fmtPct(results.cashOnCash, 1)}
+            </div>
+            <div className="lbl">Cash-on-Cash</div>
+          </div>
+        </div>
+      </div>
+      <p className="note" style={{ marginTop: -10, marginBottom: 14 }}>
+        Edits you make here (price, rent, sliders, new tabs, etc.) are saved automatically in this browser and reload with
+        the page. They live only on this device/browser — editing the .jsx or .html source file directly is what updates
+        the baseline everyone starts from.
+      </p>
+      <div className="tabs">
+        {properties.map((p) => (
+          <div key={p.id} className={`tab ${p.id === activeId ? "active" : ""}`} onClick={() => setActiveId(p.id)}>
+            {p.nickname}
+            {properties.length > 1 && (
+              <span className="tab-del" onClick={(e) => { e.stopPropagation(); removeProperty(p.id); }}>✕</span>
+            )}
+          </div>
+        ))}
+        <div className="tab-add" onClick={addProperty}>+ Add property</div>
+      </div>
+      <div className="grid2">
+        {/* LEFT: INPUTS */}
+        <div>
+          <div className="card">
+            <h3>Property</h3>
+            <div className="field-row">
+              <div className="field">
+                <label>Nickname</label>
+                <input type="text" style={{ fontFamily: "Inter" }} value={active.nickname}
+                  onChange={(e) => update("nickname", e.target.value)} />
+              </div>
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label>Address</label>
+                <input type="text" style={{ fontFamily: "Inter" }} value={active.address}
+                  onChange={(e) => update("address", e.target.value)} />
+              </div>
+            </div>
+            {active.address && (
+              <div className="field-row" style={{ marginTop: -6, marginBottom: 10, gap: 10, flexWrap: "wrap" }}>
+                <a
+                  className="link-pill"
+                  href={"https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(active.address)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  View on map
+                </a>
+                <a
+                  className="link-pill"
+                  href={"https://www.zillow.com/homes/" + encodeURIComponent(active.address.replace(/,/g, "")) + "_rb/"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Search Zillow
+                </a>
+                <a
+                  className="link-pill"
+                  href={"https://www.homes.com/search/?q=" + encodeURIComponent(active.address)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Search Homes.com
+                </a>
+              </div>
+            )}
+            <div className="field-row">
+              {numField("Purchase price ($)", "price")}
+              {numField("Down payment (%)", "downPct", { step: "0.1" })}
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label>
+                  Down payment assistance
+                  <span className="tip" title="Toggle on if a DPA program covers your full down payment as a second loan. Toggle off to enter a partial/flat dollar amount instead."> ⓘ</span>
+                </label>
+                <div
+                  className={`occ-toggle ${active.dpaCoversFullDown ? "on" : ""}`}
+                  style={{ display: "inline-block", marginTop: 2 }}
+                  onClick={() => update("dpaCoversFullDown", !active.dpaCoversFullDown)}
+                >
+                  {active.dpaCoversFullDown ? "Covers full down payment" : "Off — use $ below"}
+                </div>
+              </div>
+              {!active.dpaCoversFullDown && numField("DPA amount ($)", "dpaAmount")}
+              {numField("DPA loan rate — simple interest (%)", "dpaRatePct", { step: "0.1" })}
+            </div>
+            <div className="field-row">
+              {numField("Rate (%)", "rate", { step: "0.001" })}
+              {numField("Term (years)", "termYears", { parseInt: true })}
+              {numField("Closing costs (% of price)", "closingCostPct", { step: "0.1" })}
+            </div>
+            <div className="field-row">
+              {numField("Property tax (annual $)", "taxAnnual")}
+              {numField("Insurance (annual $)", "insuranceAnnual")}
+              {numField("HOA (monthly $)", "hoaMonthly")}
+            </div>
+            <div className="field-row">
+              {numField("FHA upfront MIP (%)", "mipUpfrontPct", { step: "0.01" })}
+              {numField("FHA annual MIP (%)", "mipAnnualPct", { step: "0.01" })}
+            </div>
+          </div>
+          <div className="card">
+            <h3>Co-owners &amp; Split</h3>
+            <div className="field-row">
+              <div className="field">
+                <label>Owner A name</label>
+                <input type="text" style={{ fontFamily: "Inter" }} value={active.ownerAName}
+                  onChange={(e) => update("ownerAName", e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Owner B name</label>
+                <input type="text" style={{ fontFamily: "Inter" }} value={active.ownerBName}
+                  onChange={(e) => update("ownerBName", e.target.value)} />
+              </div>
+              {numField("Split (%)", "ownerASplitPct", { step: "1" })}
+            </div>
+            <div className="field-row">
+              {numField("Rent you'd pay elsewhere, combined ($/mo)", "avoidedRentMonthly", {
+                step: "50",
+                tooltip: "What you two would pay in rent together if you weren't buying — for an apartment or house of similar size/location. Used to show the true added cost (or savings) of owning vs. renting, on top of the raw out-of-pocket number.",
+              })}
+            </div>
+            <p className="note">Remaining share goes to {active.ownerBName || "Owner B"}. Applies to both the monthly out-of-pocket cost and cash needed at closing below.</p>
+          </div>
+          <div className="card">
+            <h3>Units &amp; Rent</h3>
+            {active.rentCompsDate && (
+              <p className="note" style={{ marginTop: -4, marginBottom: 6 }}>
+                Rent estimates last checked against live comps on {active.rentCompsDate}. Rental markets shift —
+                worth re-checking every month or two, especially closer to your actual purchase date.
+              </p>
+            )}
+            <button
+              type="button"
+              className="refresh-btn"
+              onClick={() => {
+                const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+                update("rentCompsDate", `requested ${today} — ask Claude to re-check rent comps for this address`);
+              }}
+              style={{ marginBottom: 14 }}
+            >
+              ⟳ Flag rent comps for refresh
+            </button>
+            {active.units.map((u, idx) => (
+              <div className="unit-row" key={idx}>
+                <input type="text" value={u.name} onChange={(e) => updateUnit(idx, "name", e.target.value)} />
+                <input
+                  type="number" className="rent-input mono" value={u.rent}
+                  onChange={(e) => updateUnit(idx, "rent", parseFloat(e.target.value || 0))}
+                  placeholder="rent/mo"
+                />
+                <div
+                  className={`occ-toggle ${u.ownerOccupied ? "on" : ""}`}
+                  onClick={() => updateUnit(idx, "ownerOccupied", !u.ownerOccupied)}
+                >
+                  {u.ownerOccupied ? "You live here" : "Rented"}
+                </div>
+                {active.units.length > 1 && (
+                  <span className="tab-del" onClick={() => removeUnit(idx)}>✕</span>
+                )}
+              </div>
+            ))}
+            <div className="tab-add" style={{ display: "inline-block", marginTop: 4 }} onClick={addUnit}>
+              + Add unit
+            </div>
+            <p className="note">Toggle a unit to "You live here" to model it as owner-occupied (no rent collected on it).</p>
+          </div>
+          <div className="card">
+            <h3>Operating Assumptions</h3>
+            <div className="field-row">
+              {numField("Maintenance (% of rent)", "maintenancePct", {
+                step: "0.5",
+                tooltip: "Routine upkeep and small repairs — a leaky faucet, a broken garbage disposal, touch-up paint between tenants. Different from CapEx, which covers big-ticket replacements.",
+              })}
+              {numField("Vacancy (% of rent)", "vacancyPct", {
+                step: "0.5",
+                tooltip: "A reserve for the months a unit sits empty between tenants. Spreads the lost rent from turnover across every month, instead of assuming 100% occupancy forever.",
+              })}
+            </div>
+            <div className="field-row">
+              {numField("CapEx reserve (% of rent)", "capexPct", {
+                step: "0.5",
+                tooltip: "Capital expenditures: money set aside each month for big-ticket replacements — roof, water heater, appliances, etc. Not a bill you pay monthly, but a reserve so you're not caught short when something major fails.",
+              })}
+              {numField("Property mgmt (% of rent)", "mgmtPct", {
+                step: "0.5",
+                tooltip: "Fee for a third-party property manager who handles tenants, repairs, and rent collection. Set to 0% if you and your co-owner are self-managing the rented unit.",
+              })}
+            </div>
+            <p className="note">Applied to rent actually collected. Set to 0% for units you self-manage and aren't reserving for.</p>
+          </div>
+        </div>
+        {/* RIGHT: OUTPUTS */}
+        <div>
+          <div className="card">
+            <h3>Monthly Housing Payment (PITI)</h3>
+            <div className="ledger-line"><span className="label">Principal &amp; interest</span><span className="dots"></span><span className="val mono">{fmtUSD(results.pi)}</span></div>
+            <div className="ledger-line"><span className="label">Property taxes</span><span className="dots"></span><span className="val mono">{fmtUSD(results.tax)}</span></div>
+            <div className="ledger-line"><span className="label">Homeowner's insurance</span><span className="dots"></span><span className="val mono">{fmtUSD(results.ins)}</span></div>
+            <div className="ledger-line"><span className="label">FHA mortgage insurance (MIP)</span><span className="dots"></span><span className="val mono">{fmtUSD(results.mip)}</span></div>
+            {active.hoaMonthly > 0 && (
+              <div className="ledger-line"><span className="label">HOA</span><span className="dots"></span><span className="val mono">{fmtUSD(active.hoaMonthly)}</span></div>
+            )}
+            <div className="ledger-line total"><span className="label">Total PITI</span><span className="dots"></span><span className="val mono">{fmtUSD(results.piti)}</span></div>
+            <p className="note">Loan amount {fmtUSD(results.loanAmt)} (incl. {fmtUSD(results.ufmip)} financed upfront MIP).</p>
+          </div>
+          <div className="metric-grid">
+            <div className="metric">
+              <span className="eyebrow">Rent collected / mo</span>
+              <div className="value">{fmtUSD(results.collectedRent)}</div>
+              <div className="sub">of {fmtUSD(results.grossPotentialRent)} market potential</div>
+            </div>
+            <div className="metric">
+              <span className="eyebrow">Your out-of-pocket / mo</span>
+              <div className={`value ${results.outOfPocket <= 0 ? "pos" : ""}`}>{fmtUSD(results.outOfPocket)}</div>
+              <div className="sub">PITI + opex − rent collected</div>
+            </div>
+            <div className="metric">
+              <span className="eyebrow">Cash flow / mo (net)</span>
+              <div className={`value ${results.monthlyCashFlow >= 0 ? "pos" : "neg"}`}>{fmtUSD(results.monthlyCashFlow)}</div>
+              <div className="sub">{fmtUSD(results.annualCashFlow)} / yr</div>
+            </div>
+            <div className="metric">
+              <span className="eyebrow">
+                Cap rate
+                <span className="tip" title="Capitalization rate: the property's annual net operating income (rent collected minus operating expenses, NOT counting the mortgage) divided by its purchase price. It's a quick way to compare how efficiently different properties generate income for what you pay, independent of financing. Higher generally means better income relative to price, but it ignores your loan and cash-on-cash return."> ⓘ</span>
+              </span>
+              <div className="value">{fmtPct(results.capRate)}</div>
+              <div className="sub">NOI {fmtUSD(results.noi)} / yr, fully rented</div>
+            </div>
+          </div>
+          <div className="card">
+            <h3>Monthly Split — Who Pays What</h3>
+            <div className="ledger-line">
+              <span className="label">{active.ownerAName || "Owner A"} ({active.ownerASplitPct}%)</span>
+              <span className="dots"></span>
+              <span className="val mono">{fmtUSD(results.outOfPocket * (active.ownerASplitPct / 100))}</span>
+            </div>
+            <div className="ledger-line">
+              <span className="label">{active.ownerBName || "Owner B"} ({100 - active.ownerASplitPct}%)</span>
+              <span className="dots"></span>
+              <span className="val mono">{fmtUSD(results.outOfPocket * (1 - active.ownerASplitPct / 100))}</span>
+            </div>
+            <div className="ledger-line total">
+              <span className="label">Combined out-of-pocket / mo</span>
+              <span className="dots"></span>
+              <span className="val mono">{fmtUSD(results.outOfPocket)}</span>
+            </div>
+            {active.avoidedRentMonthly > 0 && (
+              <>
+                <div className="ledger-line sub">
+                  <span className="label">Less: rent you'd pay anyway</span>
+                  <span className="dots"></span>
+                  <span className="val mono">-{fmtUSD(active.avoidedRentMonthly)}</span>
+                </div>
+                <div className="ledger-line total">
+                  <span className="label">{results.effectiveCost >= 0 ? "True added cost of owning / mo" : "Net savings vs. renting / mo"}</span>
+                  <span className="dots"></span>
+                  <span className={`val mono ${results.effectiveCost < 0 ? "pos" : ""}`} style={{ color: results.effectiveCost < 0 ? "#2F5D3A" : undefined }}>
+                    {fmtUSD(Math.abs(results.effectiveCost))}
+                  </span>
+                </div>
+                <p className="note">This is the "vs. renting" comparison — what buying actually costs you on top of housing you'd need anyway, not a raw ROI figure.</p>
+              </>
+            )}
+          </div>
+          <div className="card">
+            <h3>Return Metrics</h3>
+            <div className="ledger-line sub"><span className="label">DSCR (NOI ÷ annual PITI)</span><span className="dots"></span><span className="val mono">{results.dscr.toFixed(2)}×</span></div>
+            <div className="ledger-line sub"><span className="label">Cash-on-cash return</span><span className="dots"></span><span className="val mono">{fmtPct(results.cashOnCash)}</span></div>
+          </div>
+          <div className="closing-card">
+            <h3>Cash to Close</h3>
+            <div className="ledger-line"><span className="label">Down payment ({active.downPct}%)</span><span className="dots"></span><span className="val mono">{fmtUSD(results.downAmt)}</span></div>
+            <div className="ledger-line"><span className="label">Closing costs ({active.closingCostPct}%)</span><span className="dots"></span><span className="val mono">{fmtUSD(results.closingCosts)}</span></div>
+            {results.dpaAmount > 0 && (
+              <div className="ledger-line"><span className="label">Less: DPA second loan</span><span className="dots"></span><span className="val mono">-{fmtUSD(results.dpaAmount)}</span></div>
+            )}
+            <div className="ledger-line total"><span className="label">Cash needed at closing</span><span className="dots"></span><span className="val mono">{fmtUSD(results.cashToClose)}</span></div>
+            <div className="ledger-line sub">
+              <span className="label">{active.ownerAName || "Owner A"} ({active.ownerASplitPct}%)</span>
+              <span className="dots"></span>
+              <span className="val mono">{fmtUSD(results.cashToClose * (active.ownerASplitPct / 100))}</span>
+            </div>
+            <div className="ledger-line sub">
+              <span className="label">{active.ownerBName || "Owner B"} ({100 - active.ownerASplitPct}%)</span>
+              <span className="dots"></span>
+              <span className="val mono">{fmtUSD(results.cashToClose * (1 - active.ownerASplitPct / 100))}</span>
+            </div>
+            {results.secondLoanBalance > 0 && (
+              <>
+                <p className="note" style={{ color: "rgba(247,244,236,0.65)" }}>
+                  Not free money: {fmtUSD(results.secondLoanBalance)} DPA second loan accrues simple interest at {active.dpaRatePct}%/yr
+                  and is owed in full — typically due on sale, refinance, or payoff, not as a monthly bill. Confirm the deferral terms
+                  with your lender.
+                </p>
+                <div className="ledger-line sub">
+                  <span className="label">Owed if paid off in 5 yrs</span><span className="dots"></span>
+                  <span className="val mono">{fmtUSD(results.secondLoanBalance * (1 + (active.dpaRatePct / 100) * 5))}</span>
+                </div>
+                <div className="ledger-line sub">
+                  <span className="label">Owed if paid off in 10 yrs</span><span className="dots"></span>
+                  <span className="val mono">{fmtUSD(results.secondLoanBalance * (1 + (active.dpaRatePct / 100) * 10))}</span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <h3>
+          Exit Scenario — Hold {(active.holdYears !== undefined && active.holdYears !== null) ? active.holdYears : 3} Years and Sell
+          <span className="tip" title="Projects the property's value forward using a compounding annual appreciation rate, subtracts what you'd still owe on both loans plus typical selling costs, and shows your equity if you sold. Also compares against simply converting the owner-occupied unit to a rental and holding instead of selling.">
+            {" "}ⓘ
+          </span>
+        </h3>
+        <div className="field-row" style={{ flexWrap: "wrap" }}>
+          {numField("Hold period (years)", "holdYears", {
+            tooltip: "How many years you plan to live in / hold the property before selling. Applies to all properties, for a fair side-by-side comparison.",
+            syncAll: true,
+          })}
+          {numField("Annual appreciation (%)", "appreciationPct", {
+            tooltip: "Assumed yearly home price growth. East Bay long-run averages have historically run roughly 3–6%/yr, but this varies a lot by cycle — treat this as a planning assumption, not a guarantee. Applies to all properties.",
+            syncAll: true,
+          })}
+          {numField("Selling costs (%)", "sellingCostPct", {
+            tooltip: "Agent commissions plus closing costs on the sale side, typically combined around 6–8% of sale price. Applies to all properties.",
+            syncAll: true,
+          })}
+          {numField("Rent growth (%/yr)", "rentEscalationPct", {
+            tooltip: "Assumed annual rent increase, compounded over the hold period. Used only for the fully-rented alternative comparison below, not for your current out-of-pocket cost. Applies to all properties.",
+            syncAll: true,
+          })}
+        </div>
+        <p className="note" style={{ marginTop: -4 }}>
+          These four assumptions apply to all properties at once, so the comparison below stays apples-to-apples.
+          Everything else on this tab (rent, price, insurance, etc.) stays specific to this property.
+        </p>
+        <div className="metric-grid" style={{ marginTop: 14 }}>
+          <div className="metric">
+            <span className="eyebrow">Projected value</span>
+            <div className="value">{fmtUSD(results.futureValue)}</div>
+            <div className="sub">+{fmtUSD(results.totalAppreciationGain)} over {results.holdYears} yrs</div>
+          </div>
+          <div className="metric">
+            <span className="eyebrow">Remaining 1st loan</span>
+            <div className="value">{fmtUSD(results.loanBalanceAtExit)}</div>
+            <div className="sub">at year {results.holdYears}</div>
+          </div>
+          <div className="metric">
+            <span className="eyebrow">DPA owed at exit</span>
+            <div className="value">{fmtUSD(results.secondLoanAtExit)}</div>
+            <div className="sub">simple interest, {active.dpaRatePct}%/yr</div>
+          </div>
+          <div className="metric">
+            <span className="eyebrow">Selling costs</span>
+            <div className="value">{fmtUSD(results.sellingCosts)}</div>
+            <div className="sub">{active.sellingCostPct}% of sale price</div>
+          </div>
+          <div className="metric">
+            <span className="eyebrow">Net equity if sold</span>
+            <div className={`value ${results.equityAtSale >= 0 ? "pos" : "neg"}`}>{fmtUSD(results.equityAtSale)}</div>
+            <div className="sub">{fmtUSD(results.equityAtSale * (active.ownerASplitPct / 100))} / {fmtUSD(results.equityAtSale * (1 - active.ownerASplitPct / 100))} split</div>
+          </div>
+        </div>
+        <p className="note" style={{ marginTop: 12 }}>
+          Alternative to selling: if instead you moved out and rented the unit you currently occupy too (fully rented, no
+          sale), estimated cash flow at today's rents would be{" "}
+          <strong className={results.fullyRentedMonthlyCashFlow >= 0 ? "pos" : "neg"}>{fmtUSD(results.fullyRentedMonthlyCashFlow)}/mo</strong>{" "}
+          ({fmtUSD(results.fullyRentedAnnualCashFlow)}/yr). Escalating rent at {results.rentEscalationPct}%/yr over{" "}
+          {results.holdYears} years brings gross rent to {fmtUSD(results.escalatedGrossRent)}/mo, for an estimated{" "}
+          <strong className={results.escalatedMonthlyCashFlow >= 0 ? "pos" : "neg"}>{fmtUSD(results.escalatedMonthlyCashFlow)}/mo</strong>{" "}
+          ({fmtUSD(results.escalatedAnnualCashFlow)}/yr) cash flow by year {results.holdYears}. Selling realizes{" "}
+          {fmtUSD(results.equityAtSale)} today; holding and renting keeps that equity invested in the property while it
+          (hopefully) keeps appreciating, plus growing rental cash flow.
+        </p>
+      </div>
+      <div className="card">
+        <h3>
+          Break-Even vs. Renting
+          <span className="tip" title="Compares two piles of money at a given year: (1) the equity you'd walk away with if you sold — projected value minus remaining loans minus selling costs — and (2) the cash you've put in beyond what renting would've cost you — cash to close plus the monthly gap between your out-of-pocket cost and your avoided rent, compounded over time. When pile (1) catches up to pile (2), you've broken even.">
+            {" "}ⓘ
+          </span>
+        </h3>
+        <div className="slider-row">
+          <div className="slider-label">
+            <span>Preview year</span>
+            <span className="year-val">Year {previewYear}</span>
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={breakEven.maxYears}
+            step={1}
+            value={previewYear}
+            onChange={(e) => update("breakEvenPreviewYears", parseInt(e.target.value, 10))}
+          />
+        </div>
+        <div className="metric-grid">
+          <div className="metric">
+            <span className="eyebrow">Equity if sold, year {previewYear}</span>
+            <div className="value">{fmtUSD(previewRow.equity)}</div>
+            <div className="sub">{fmtUSD(previewRow.futureValue)} projected value</div>
+          </div>
+          <div className="metric">
+            <span className="eyebrow">Cash in beyond renting, year {previewYear}</span>
+            <div className="value">{fmtUSD(previewRow.cumulativeExtraCash)}</div>
+            <div className="sub">cash to close + cumulative out-of-pocket vs. avoided rent</div>
+          </div>
+          <div className="metric">
+            <span className="eyebrow">Net position, year {previewYear}</span>
+            <div className={`value ${previewRow.netPosition >= 0 ? "pos" : "neg"}`}>{fmtUSD(previewRow.netPosition)}</div>
+            <div className="sub">{previewRow.netPosition >= 0 ? "ahead of renting" : "behind renting"}</div>
+          </div>
+          <div className="metric">
+            <span className="eyebrow">Break-even year</span>
+            <div className="value">{breakEven.breakEvenYear ? `Year ${breakEven.breakEvenYear}` : `Beyond ${breakEven.maxYears}`}</div>
+            <div className="sub">first year equity overtakes cash paid in</div>
+          </div>
+        </div>
+        <p className="note">
+          Assumes today's out-of-pocket cost and avoided rent hold flat year over year (no escalation), and that appreciation
+          and selling costs follow the same assumptions as the Exit Scenario above. A rough planning tool, not a forecast.
+        </p>
+      </div>
+      <div className="card">
+        <h3>
+          Amortization Schedule — Principal &amp; Interest
+          <span className="tip" title="Year-by-year breakdown of your first mortgage payment, split into principal and interest, based on the current loan amount, rate, and term. Excludes FHA MIP, taxes, insurance, and HOA.">
+            {" "}ⓘ
+          </span>
+        </h3>
+        <button
+          type="button"
+          className="refresh-btn"
+          onClick={() => setShowAmort((v) => !v)}
+          style={{ marginBottom: 14 }}
+        >
+          {showAmort ? "▾ Hide table" : "▸ Show table"}
+        </button>
+        {showAmort && (
+          <>
+            <table className="compare">
+              <thead>
+                <tr>
+                  <th>Year</th><th>Payment</th><th>Principal</th><th>Interest</th><th>Ending Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {amortSchedule.map((row) => (
+                  <tr key={row.year} style={row.year === holdYearRounded ? { background: "var(--paper2)", fontWeight: 600 } : undefined}>
+                    <td>{row.year}</td>
+                    <td>{fmtUSD(row.totalPaid)}</td>
+                    <td>{fmtUSD(row.principalPaid)}</td>
+                    <td>{fmtUSD(row.interestPaid)}</td>
+                    <td>{fmtUSD(row.endBalance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="note">Principal &amp; interest only. Excludes the recurring annual FHA mortgage insurance (MIP) premium, taxes, insurance, and HOA — those are shown separately in the Monthly Housing Payment card above. (The financed upfront MIP is folded into the loan balance itself, so it is amortized along with the rest of the principal.)</p>
+          </>
+        )}
+      </div>
+      {properties.length > 1 && (
+        <div className="card">
+          <h3>Exit Scenario Comparison (at each property's hold period)</h3>
+          <table className="compare">
+            <thead>
+              <tr>
+                <th>Property</th><th>Price today</th><th>Hold (yrs)</th><th>Appreciation/yr</th>
+                <th>Projected value</th><th>Net equity if sold</th><th>Fully-rented/mo (today)</th>
+                <th title="Fully-rented cash flow at the end of the hold period, with rent escalated at the assumed annual growth rate.">Fully-rented/mo (yr N)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allResults.map(({ p, r }) => (
+                <tr key={p.id}>
+                  <td style={{ fontFamily: "Inter", fontWeight: 600 }}>{p.nickname}</td>
+                  <td>{fmtUSD(p.price)}</td>
+                  <td>{r.holdYears}</td>
+                  <td>{fmtPct(r.appreciationPct, 1)}</td>
+                  <td>{fmtUSD(r.futureValue)}</td>
+                  <td className={r.equityAtSale >= 0 ? "pos" : "neg"}>{fmtUSD(r.equityAtSale)}</td>
+                  <td className={r.fullyRentedMonthlyCashFlow >= 0 ? "pos" : "neg"}>{fmtUSD(r.fullyRentedMonthlyCashFlow)}</td>
+                  <td className={r.escalatedMonthlyCashFlow >= 0 ? "pos" : "neg"}>{fmtUSD(r.escalatedMonthlyCashFlow)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="note">
+            Appreciation is a planning assumption (default 4%/yr), not a forecast — adjust it per property on that
+            property's tab to stress-test optimistic vs. conservative scenarios.
+          </p>
+        </div>
+      )}
+      {properties.length > 1 && (
+        <div className="card">
+          <h3>Compare Properties</h3>
+          <table className="compare">
+            <thead>
+              <tr>
+                <th>Property</th><th>Price</th><th>PITI/mo</th><th>Out-of-pocket/mo</th>
+                <th>Net cash flow/mo</th><th>Cash to close</th><th>Cash-on-cash</th><th title="Annual net operating income (rent minus operating costs, excluding mortgage) divided by price — measures income efficiency independent of financing.">Cap rate ⓘ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allResults.map(({ p, r }) => (
+                <tr key={p.id}>
+                  <td style={{ fontFamily: "Inter", fontWeight: 600 }}>{p.nickname}</td>
+                  <td>{fmtUSD(p.price)}</td>
+                  <td>{fmtUSD(r.piti)}</td>
+                  <td className={r.outOfPocket <= 0 ? "pos" : ""}>{fmtUSD(r.outOfPocket)}</td>
+                  <td className={r.monthlyCashFlow >= 0 ? "pos" : "neg"}>{fmtUSD(r.monthlyCashFlow)}</td>
+                  <td>{fmtUSD(r.cashToClose)}</td>
+                  <td className={r.cashOnCash >= 0 ? "pos" : "neg"}>{fmtPct(r.cashOnCash)}</td>
+                  <td>{fmtPct(r.capRate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="note">
+        Rent for the Delaware St test property is estimated from nearby North Berkeley 3bd comps (~$4,000–4,500/mo) — Zillow had no
+        Rent Zestimate for this listing, so confirm with a live comp pull or property manager before relying on it. 701 40th St is a
+        fully-occupied fourplex (active listing, $999,995, listed 5/18/2026) — all four 1bd/1ba units currently have tenants on
+        month-to-month leases, so unlike the other tabs, immediate owner-occupancy at close isn't guaranteed under FHA's
+        owner-occupancy requirement; the lowest-rent unit is modeled as the one you'd move into once vacated. All figures are
+        estimates for planning purposes, not a loan commitment.
+      </p>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<ROIDashboard />);
+</script>
+</body>
+</html>
