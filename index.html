@@ -495,11 +495,22 @@ function ROIDashboard() {
     } catch (e) {}
     setMyName(trimmed);
     setShowNamePrompt(false);
+    displayLabelRef.current = trimmed; // set synchronously so the very next heartbeat already has it
+    syncWithServer(null); // push right away instead of waiting up to 3s for the next background tick
   }
   const remoteUpdatedAtRef = useRef(0);
   const pushTimerRef = useRef(null);
   const applyingRemoteRef = useRef(false);
   const didMountRef = useRef(false);
+  // The polling interval below is set up once on mount ([] deps) so it doesn't restart every render.
+  // That means any function it calls closes over mount-time values forever unless those values are
+  // read from a ref instead — a ref's .current is always current, regardless of which stale render's
+  // closure is doing the reading. Without this, renaming after the first heartbeat would never take
+  // effect: the background tick would keep re-sending your name from the instant the page loaded.
+  const displayLabelRef = useRef(displayLabel);
+  useEffect(() => {
+    displayLabelRef.current = displayLabel;
+  }, [displayLabel]);
 
   // One call does it all: optionally writes a properties edit, always heartbeats this session's
   // presence, and always returns the current shared state + who else is online. Kept to a single
@@ -513,7 +524,7 @@ function ROIDashboard() {
       if (!isBackgroundTick) setSyncStatus("syncing");
       const body = {
         sessionId,
-        label: displayLabel,
+        label: displayLabelRef.current,
         emoji: selfAvatar.emoji,
         color: selfAvatar.color,
       };
