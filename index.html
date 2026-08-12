@@ -486,15 +486,12 @@ function ROIDashboard() {
     }
   });
   const [nameDraft, setNameDraft] = useState(myName);
-  const displayLabel = myName.trim() ? myName.trim() : `Anonymous ${selfAvatar.name}`;
+  const displayLabel = myName.trim() ? myName.trim() : "Guest";
   function saveName(name) {
     const trimmed = name.trim();
+    if (!trimmed) return; // a name is required — the modal's Continue button is disabled until there's one
     try {
-      if (trimmed) {
-        window.localStorage.setItem(NAME_STORAGE_KEY, trimmed);
-      } else {
-        window.localStorage.removeItem(NAME_STORAGE_KEY);
-      }
+      window.localStorage.setItem(NAME_STORAGE_KEY, trimmed);
     } catch (e) {}
     setMyName(trimmed);
     setShowNamePrompt(false);
@@ -697,8 +694,8 @@ function ROIDashboard() {
           <div className="name-modal">
             <h3 style={{ marginBottom: 6 }}>What's your name?</h3>
             <p className="note" style={{ marginBottom: 14 }}>
-              Shown to anyone else viewing this dashboard instead of an anonymous animal name. Saved only in this browser —
-              type it again on any other device/browser.
+              Shown to anyone else viewing this dashboard so you both know who's making which changes. Saved only in this
+              browser — type it again on any other device/browser.
             </p>
             <input
               type="text"
@@ -712,13 +709,14 @@ function ROIDashboard() {
               }}
             />
             <div className="field-row" style={{ marginTop: 14, justifyContent: "flex-end", gap: 10 }}>
-              <button type="button" className="refresh-btn" onClick={() => saveName("")}>
-                Stay anonymous
-              </button>
               <button
                 type="button"
                 className="refresh-btn"
-                style={{ background: "var(--ink)", color: "var(--paper)", borderColor: "var(--ink)" }}
+                disabled={!nameDraft.trim()}
+                style={{
+                  background: "var(--ink)", color: "var(--paper)", borderColor: "var(--ink)",
+                  opacity: nameDraft.trim() ? 1 : 0.4, cursor: nameDraft.trim() ? "pointer" : "not-allowed",
+                }}
                 onClick={() => saveName(nameDraft)}
               >
                 Continue
