@@ -74,6 +74,8 @@ const FONTS = (
     .metric .value { font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600; color:var(--ink); }
     .metric .value.pos { color: var(--green); }
     .metric .value.neg { color: var(--red); }
+    .rhd .pos { color: var(--green); }
+    .rhd .neg { color: var(--red); }
     .metric .sub { font-size:11px; color:var(--muted); margin-top:2px; }
     .badge-seal { width:86px; height:86px; border-radius:50%; border:2px solid var(--brass); display:flex;
                   flex-direction:column; align-items:center; justify-content:center; flex-shrink:0;
@@ -114,6 +116,15 @@ const FONTS = (
                                  font-size:12px; color:var(--muted); margin-bottom:6px; }
     .slider-row .slider-label .year-val { font-family:'IBM Plex Mono',monospace; font-weight:600; color:var(--ink); font-size:14px; }
     .slider-row input[type=range] { width:100%; accent-color: var(--brass); cursor:pointer; }
+    .metric-grid-3 { display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:6px; }
+    @media (max-width: 620px) { .metric-grid-3 { grid-template-columns: 1fr; } }
+    .stress-card .slider-wrap { position:relative; padding-top:16px; margin: 4px 0 4px; }
+    .stress-card input[type=range] { width:100%; accent-color: var(--brass); cursor:pointer; }
+    .stress-card .stress-tick { position:absolute; top:0; width:2px; height:30px; background:var(--red);
+                                 transform: translateX(-1px); pointer-events:none; }
+    .stress-card .stress-tick .tick-label { position:absolute; top:-13px; left:50%; transform:translateX(-50%);
+                                              font-family:'IBM Plex Mono',monospace; font-size:9px;
+                                              text-transform:uppercase; letter-spacing:.04em; color:var(--red); white-space:nowrap; }
     .presence-group { display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
     .presence-title { font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.08em;
                        color:var(--muted); }
@@ -149,6 +160,14 @@ function remainingBalance(loanAmount, annualRatePct, years, monthsElapsed) {
   const bal = loanAmount * Math.pow(1 + r, monthsElapsed) - pmt * ((Math.pow(1 + r, monthsElapsed) - 1) / r);
   return Math.max(0, bal);
 }
+// Future value of a stream of equal monthly contributions (ordinary annuity), for the opportunity-cost comparison.
+function futureValueAnnuity(monthlyContribution, annualRatePct, years) {
+  const r = annualRatePct / 100 / 12;
+  const n = years * 12;
+  if (n <= 0) return 0;
+  if (r === 0) return monthlyContribution * n;
+  return monthlyContribution * ((Math.pow(1 + r, n) - 1) / r);
+}
 function buildAmortizationSchedule(loanAmount, annualRatePct, years) {
   const pmt = monthlyPI(loanAmount, annualRatePct, years);
   const schedule = [];
@@ -174,11 +193,18 @@ function calc(p) {
   const mip = (loanAmt * (p.mipAnnualPct / 100)) / 12;
   const piti = pi + tax + ins + mip + p.hoaMonthly;
   const grossPotentialRent = p.units.reduce((s, u) => s + (Number(u.rent) || 0), 0);
-  const collectedRent = p.units.reduce((s, u) => s + (u.ownerOccupied ? 0 : Number(u.rent) || 0), 0);
+  const rawCollectedRent = p.units.reduce((s, u) => s + (u.ownerOccupied ? 0 : Number(u.rent) || 0), 0);
+  const rentStressPct = (p.rentStressPct !== undefined && p.rentStressPct !== null && p.rentStressPct !== "") ? p.rentStressPct : 100;
+  const collectedRent = rawCollectedRent * (rentStressPct / 100);
   const opExRate = (p.maintenancePct + p.vacancyPct + p.capexPct + p.mgmtPct) / 100;
   const opExOnCollected = collectedRent * opExRate;
   const monthlyCashFlow = collectedRent - opExOnCollected - piti;
   const annualCashFlow = monthlyCashFlow * 12;
+  // --- Break-even rent: the collected-rent level (at 100% of rented units' asking rent) where cash flow hits zero ---
+  const breakEvenCollectedRent = opExRate < 1 ? piti / (1 - opExRate) : Infinity;
+  const breakEvenStressPct = rawCollectedRent > 0 ? (breakEvenCollectedRent / rawCollectedRent) * 100 : Infinity;
+  const rentCushionPct = rawCollectedRent > 0 ? 100 - breakEvenStressPct : -Infinity;
+  const rentCushionDollars = rawCollectedRent > 0 ? rawCollectedRent - breakEvenCollectedRent : 0;
   const closingCosts = p.price * (p.closingCostPct / 100);
   const dpaAmount = p.dpaCoversFullDown ? downAmt : (p.dpaAmount || 0);
   const cashToClose = Math.max(0, downAmt + closingCosts - dpaAmount);
@@ -202,6 +228,15 @@ function calc(p) {
   const sellingCosts = futureValue * (sellingCostPct / 100);
   const equityAtSale = futureValue - loanBalanceAtExit - secondLoanAtExit - sellingCosts;
   const totalAppreciationGain = futureValue - p.price;
+  // --- Opportunity cost: what the cash to close (plus any monthly premium owning costs over renting) would be
+  // worth if invested elsewhere instead of buying, so equity-at-sale isn't compared against a free $0 alternative.
+  const altReturnPct = (p.altReturnPct !== undefined && p.altReturnPct !== null && p.altReturnPct !== "") ? p.altReturnPct : 7;
+  const investedCashToCloseValue = cashToClose * Math.pow(1 + altReturnPct / 100, holdYears);
+  // Only counted when owning costs more per month than renting would — that's the monthly cash renting+investing would free up.
+  const monthlyDeltaForRentScenario = effectiveCost > 0 ? effectiveCost : 0;
+  const investedMonthlyDeltaValue = futureValueAnnuity(monthlyDeltaForRentScenario, altReturnPct, holdYears);
+  const opportunityCostTotal = investedCashToCloseValue + investedMonthlyDeltaValue;
+  const buyingAdvantage = equityAtSale - opportunityCostTotal;
   // Alternative: keep the property, rent out the owner-occupied unit(s) too (fully rented)
   const rentEscalationPct = (p.rentEscalationPct !== undefined && p.rentEscalationPct !== null) ? p.rentEscalationPct : 1;
   const fullyRentedGrossRent = grossPotentialRent; // all units rented, including the one you currently occupy, at today's rent
@@ -216,10 +251,13 @@ function calc(p) {
   return {
     loanAmt, pi, tax, ins, mip, piti, downAmt, ufmip, closingCosts, cashToClose,
     grossPotentialRent, collectedRent, opExOnCollected, monthlyCashFlow, annualCashFlow,
+    rawCollectedRent, rentStressPct, breakEvenCollectedRent, breakEvenStressPct, rentCushionPct, rentCushionDollars,
     cashOnCash, noi, capRate, dscr, outOfPocket, effectiveCost, dpaAmount, secondLoanBalance,
     holdYears, appreciationPct, sellingCostPct, futureValue, loanBalanceAtExit, secondLoanAtExit,
     sellingCosts, equityAtSale, totalAppreciationGain, fullyRentedMonthlyCashFlow, fullyRentedAnnualCashFlow,
     rentEscalationPct, escalatedGrossRent, escalatedMonthlyCashFlow, escalatedAnnualCashFlow,
+    altReturnPct, investedCashToCloseValue, monthlyDeltaForRentScenario, investedMonthlyDeltaValue,
+    opportunityCostTotal, buyingAdvantage,
   };
 }
 function computeBreakEven(p, results) {
@@ -271,6 +309,8 @@ function makeProperty(overrides = {}) {
     sellingCostPct: 7, // agent commission + closing costs on sale, typical combined ~6-8%
     rentEscalationPct: 1, // assumed annual rent growth rate over the hold period
     breakEvenPreviewYears: 5, // which year the break-even slider is previewing
+    rentStressPct: 100, // rent stress test: % of full asking rent actually collected
+    altReturnPct: 7, // assumed annual return if cash-to-close were invested elsewhere instead of buying
     rentCompsDate: "",
     units: [
       { name: "Unit 1", rent: 0, ownerOccupied: true },
@@ -1028,6 +1068,68 @@ function ROIDashboard() {
               <div className="sub">NOI {fmtUSD(results.noi)} / yr, fully rented</div>
             </div>
           </div>
+          <div className="card stress-card">
+            <h3>
+              Break-Even Rent Stress Test
+              <span className="tip" title="Drag to see what happens if collected rent comes in below (or above) what you've entered for this property. Shows collected rent, cash flow, and cash-on-cash at that scenario, plus exactly how much cushion exists before cash flow turns negative."> ⓘ</span>
+            </h3>
+            {results.rawCollectedRent > 0 ? (
+              <>
+                <div className="slider-wrap">
+                  {Number.isFinite(results.breakEvenStressPct) && (
+                    <div
+                      className="stress-tick"
+                      style={{ left: `${Math.min(100, Math.max(0, (Math.min(150, Math.max(0, results.breakEvenStressPct)) / 150) * 100))}%` }}
+                    >
+                      <span className="tick-label">break-even</span>
+                    </div>
+                  )}
+                  <input
+                    type="range"
+                    min={0}
+                    max={150}
+                    step={1}
+                    value={active.rentStressPct !== undefined && active.rentStressPct !== null && active.rentStressPct !== "" ? active.rentStressPct : 100}
+                    onChange={(e) => update("rentStressPct", parseInt(e.target.value, 10))}
+                  />
+                </div>
+                <div className="field-row" style={{ alignItems: "center" }}>
+                  <span className="mono" style={{ fontSize: 13, fontWeight: 600 }}>
+                    {active.rentStressPct !== undefined && active.rentStressPct !== null && active.rentStressPct !== "" ? active.rentStressPct : 100}% of full asking rent
+                  </span>
+                  {active.rentStressPct !== 100 && (
+                    <span className="tab-add" style={{ padding: "4px 10px" }} onClick={() => update("rentStressPct", 100)}>
+                      Reset to 100%
+                    </span>
+                  )}
+                </div>
+                <div className="metric-grid-3">
+                  <div className="metric">
+                    <span className="eyebrow">Rent collected at this level</span>
+                    <div className="value">{fmtUSD(results.collectedRent)}</div>
+                    <div className="sub">of {fmtUSD(results.rawCollectedRent)}/mo at full rent</div>
+                  </div>
+                  <div className="metric">
+                    <span className="eyebrow">Cash flow at this level</span>
+                    <div className={`value ${results.monthlyCashFlow >= 0 ? "pos" : "neg"}`}>{fmtUSD(results.monthlyCashFlow)}</div>
+                    <div className="sub">{fmtPct(results.cashOnCash, 1)} cash-on-cash</div>
+                  </div>
+                  <div className="metric">
+                    <span className="eyebrow">Break-even rent</span>
+                    <div className="value">{Number.isFinite(results.breakEvenCollectedRent) ? fmtUSD(results.breakEvenCollectedRent) : "n/a"}</div>
+                    <div className="sub">{Number.isFinite(results.breakEvenStressPct) ? `${fmtPct(results.breakEvenStressPct, 0)} of full rent` : "—"}</div>
+                  </div>
+                </div>
+                <p className="note">
+                  {results.rentCushionPct >= 0
+                    ? `Rent can drop ${fmtPct(results.rentCushionPct, 0)} (${fmtUSD(results.rentCushionDollars)}/mo, down to ${fmtUSD(results.breakEvenCollectedRent)}/mo total collected) before cash flow turns negative.`
+                    : `Even at full asking rent, this property is already ${fmtUSD(Math.abs(results.rentCushionDollars))}/mo (${fmtPct(Math.abs(results.rentCushionPct), 0)}) short of break-even — cash flow is negative before any rent discount.`}
+                </p>
+              </>
+            ) : (
+              <p className="note">No rented units on this property — there's no collected rent to stress-test.</p>
+            )}
+          </div>
           <div className="card">
             <h3>Monthly Split — Who Pays What</h3>
             <div className="ledger-line">
@@ -1130,9 +1232,13 @@ function ROIDashboard() {
             tooltip: "Assumed annual rent increase, compounded over the hold period. Used only for the fully-rented alternative comparison below, not for your current out-of-pocket cost. Applies to all properties.",
             syncAll: true,
           })}
+          {numField("Alt. investment return (%/yr)", "altReturnPct", {
+            tooltip: "Assumed annual return if your cash-to-close were invested elsewhere instead of buying (e.g. a stock index fund) — long-run S&P 500 averages have historically run roughly 7–10%/yr nominal. Used only for the opportunity-cost comparison below. Applies to all properties.",
+            syncAll: true,
+          })}
         </div>
         <p className="note" style={{ marginTop: -4 }}>
-          These four assumptions apply to all properties at once, so the comparison below stays apples-to-apples.
+          These five assumptions apply to all properties at once, so the comparison below stays apples-to-apples.
           Everything else on this tab (rent, price, insurance, etc.) stays specific to this property.
         </p>
         <div className="metric-grid" style={{ marginTop: 14 }}>
@@ -1161,6 +1267,14 @@ function ROIDashboard() {
             <div className={`value ${results.equityAtSale >= 0 ? "pos" : "neg"}`}>{fmtUSD(results.equityAtSale)}</div>
             <div className="sub">{fmtUSD(results.equityAtSale * (active.ownerASplitPct / 100))} / {fmtUSD(results.equityAtSale * (1 - active.ownerASplitPct / 100))} split</div>
           </div>
+          <div className="metric">
+            <span className="eyebrow">
+              Invested elsewhere instead
+              <span className="tip" title="Future value of the cash-to-close alone if invested at the alternative-return rate above, plus (only if owning costs more per month than renting) the monthly difference invested too. This is the honest comparison for equity-if-sold — not $0."> ⓘ</span>
+            </span>
+            <div className="value">{fmtUSD(results.opportunityCostTotal)}</div>
+            <div className="sub">@ {active.altReturnPct}%/yr for {results.holdYears} yrs</div>
+          </div>
         </div>
         <p className="note" style={{ marginTop: 12 }}>
           Alternative to selling: if instead you moved out and rented the unit you currently occupy too (fully rented, no
@@ -1172,6 +1286,17 @@ function ROIDashboard() {
           ({fmtUSD(results.escalatedAnnualCashFlow)}/yr) cash flow by year {results.holdYears}. Selling realizes{" "}
           {fmtUSD(results.equityAtSale)} today; holding and renting keeps that equity invested in the property while it
           (hopefully) keeps appreciating, plus growing rental cash flow.
+        </p>
+        <p className="note" style={{ marginTop: 8 }}>
+          Opportunity cost check: putting {fmtUSD(results.cashToClose)} into the market instead at {active.altReturnPct}%/yr
+          {results.monthlyDeltaForRentScenario > 0
+            ? ` — plus investing the ${fmtUSD(results.monthlyDeltaForRentScenario)}/mo this property costs over renting each month —`
+            : ""}{" "}
+          would be worth <strong>{fmtUSD(results.opportunityCostTotal)}</strong> after {results.holdYears} years. Buying nets{" "}
+          <strong>{fmtUSD(results.equityAtSale)}</strong> in equity if sold —{" "}
+          {results.buyingAdvantage >= 0
+            ? <strong className="pos">a {fmtUSD(results.buyingAdvantage)} edge over renting and investing instead.</strong>
+            : <strong className="neg">{fmtUSD(Math.abs(results.buyingAdvantage))} behind renting and investing instead.</strong>}
         </p>
       </div>
       <div className="card">
@@ -1270,6 +1395,7 @@ function ROIDashboard() {
                 <th>Property</th><th>Price today</th><th>Hold (yrs)</th><th>Appreciation/yr</th>
                 <th>Projected value</th><th>Net equity if sold</th><th>Fully-rented/mo (today)</th>
                 <th title="Fully-rented cash flow at the end of the hold period, with rent escalated at the assumed annual growth rate.">Fully-rented/mo (yr N)</th>
+                <th title="Net equity if sold, minus what the cash-to-close (and any monthly premium over renting) would be worth if invested elsewhere instead at the assumed alternative-return rate. Positive means buying beats renting and investing.">Vs. investing ⓘ</th>
               </tr>
             </thead>
             <tbody>
@@ -1283,6 +1409,7 @@ function ROIDashboard() {
                   <td className={r.equityAtSale >= 0 ? "pos" : "neg"}>{fmtUSD(r.equityAtSale)}</td>
                   <td className={r.fullyRentedMonthlyCashFlow >= 0 ? "pos" : "neg"}>{fmtUSD(r.fullyRentedMonthlyCashFlow)}</td>
                   <td className={r.escalatedMonthlyCashFlow >= 0 ? "pos" : "neg"}>{fmtUSD(r.escalatedMonthlyCashFlow)}</td>
+                  <td className={r.buyingAdvantage >= 0 ? "pos" : "neg"}>{fmtUSD(r.buyingAdvantage)}</td>
                 </tr>
               ))}
             </tbody>
@@ -1301,6 +1428,7 @@ function ROIDashboard() {
               <tr>
                 <th>Property</th><th>Price</th><th>PITI/mo</th><th>Out-of-pocket/mo</th>
                 <th>Net cash flow/mo</th><th>Cash to close</th><th>Cash-on-cash</th><th title="Annual net operating income (rent minus operating costs, excluding mortgage) divided by price — measures income efficiency independent of financing.">Cap rate ⓘ</th>
+                <th title="How much collected rent could fall before monthly cash flow turns negative. Higher is more resilient.">Rent cushion ⓘ</th>
               </tr>
             </thead>
             <tbody>
@@ -1314,6 +1442,9 @@ function ROIDashboard() {
                   <td>{fmtUSD(r.cashToClose)}</td>
                   <td className={r.cashOnCash >= 0 ? "pos" : "neg"}>{fmtPct(r.cashOnCash)}</td>
                   <td>{fmtPct(r.capRate)}</td>
+                  <td className={r.rawCollectedRent <= 0 ? "" : (r.rentCushionPct >= 0 ? "pos" : "neg")}>
+                    {r.rawCollectedRent <= 0 ? "—" : fmtPct(r.rentCushionPct, 0)}
+                  </td>
                 </tr>
               ))}
             </tbody>
