@@ -466,7 +466,35 @@ const SEED5 = makeProperty({
   ],
   rentCompsDate: "Aug 11, 2026 — rents pulled from the active Compass/MLS listing (#41135209), not third-party comps",
 });
-const DEFAULT_PROPERTIES = [SEED, SEED2, SEED3, SEED4, SEED5];
+const SEED6 = makeProperty({
+  nickname: "McBryde Ave (SFH, no rental)",
+  address: "5928 McBryde Ave, Richmond, CA 94805",
+  price: 765000,
+  downPct: 3.5,
+  rate: 6.375,
+  termYears: 30,
+  taxAnnual: 9563, // Prop 13 reassessed to purchase price, ~1.25% effective rate for Contra Costa
+  insuranceAnnual: 6500, // confirmed IN a Very High Fire Hazard Severity Zone per NHD report — likely needs CA FAIR Plan + DIC wrap; confirm with an actual quote
+  hoaMonthly: 0,
+  mipUpfrontPct: 1.75,
+  mipAnnualPct: 0.55,
+  closingCostPct: 2.6,
+  maintenancePct: 5,
+  vacancyPct: 5,
+  capexPct: 5,
+  mgmtPct: 0,
+  ownerAName: "Jose",
+  ownerBName: "Aurelio",
+  ownerASplitPct: 50,
+  avoidedRentMonthly: 5000,
+  dpaCoversFullDown: true,
+  dpaRatePct: 1,
+  units: [
+    { name: "Whole house — 3bd/3ba, 1,884 sqft (you two live here, no tenant)", rent: 3200, ownerOccupied: true },
+  ],
+  rentCompsDate: "Aug 16, 2026 — rough estimate, not yet comped against active listings",
+});
+const DEFAULT_PROPERTIES = [SEED, SEED2, SEED3, SEED4, SEED5, SEED6];
 const STORAGE_KEY = "roiDashboardState.v1";
 const NAME_STORAGE_KEY = "roiDashboardMyName.v1";
 const SYNC_URL = "/api/sync";
