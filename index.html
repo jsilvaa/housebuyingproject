@@ -319,36 +319,6 @@ function makeProperty(overrides = {}) {
     ...overrides,
   };
 }
-const SEED = makeProperty({
-  nickname: "Delaware St",
-  address: "1308 Delaware St, Berkeley, CA 94702",
-  price: 995000,
-  downPct: 3.5,
-  dpaAmount: 0,
-  rate: 6.375,
-  termYears: 30,
-  taxAnnual: 12437,
-  insuranceAnnual: 4000,
-  hoaMonthly: 0,
-  mipUpfrontPct: 1.75,
-  mipAnnualPct: 0.55,
-  closingCostPct: 2.6,
-  maintenancePct: 3, // optimistic — clean inspection, seismic retrofit already done
-  vacancyPct: 5,
-  capexPct: 2, // optimistic — new water heater already installed, no major deferred big-ticket items
-  mgmtPct: 0,
-  ownerAName: "Jose",
-  ownerBName: "Aurelio",
-  ownerASplitPct: 50,
-  avoidedRentMonthly: 5000,
-  dpaCoversFullDown: true,
-  dpaRatePct: 1,
-  units: [
-    { name: "Unit 1 — 3bd/1.5ba (you two live here)", rent: 4000, ownerOccupied: true },
-    { name: "Unit 2 — 3bd/1.5ba (rented out)", rent: 4000, ownerOccupied: false },
-  ],
-  rentCompsDate: "Aug 10, 2026",
-});
 const SEED2 = makeProperty({
   nickname: "Moeser Ln",
   address: "7433 Moeser Ln, El Cerrito, CA 94530",
@@ -494,7 +464,7 @@ const SEED6 = makeProperty({
   ],
   rentCompsDate: "Aug 16, 2026 — rough estimate, not yet comped against active listings",
 });
-const DEFAULT_PROPERTIES = [SEED, SEED2, SEED3, SEED4, SEED5, SEED6];
+const DEFAULT_PROPERTIES = [SEED2, SEED3, SEED4, SEED5, SEED6];
 const STORAGE_KEY = "roiDashboardState.v1";
 const NAME_STORAGE_KEY = "roiDashboardMyName.v1";
 const SYNC_URL = "/api/sync";
