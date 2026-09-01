@@ -312,6 +312,10 @@ function makeProperty(overrides = {}) {
     rentStressPct: 100, // rent stress test: % of full asking rent actually collected
     altReturnPct: 7, // assumed annual return if cash-to-close were invested elsewhere instead of buying
     rentCompsDate: "",
+    // Which batch of built-in seeds this property came from. Anything already saved before seed
+    // versioning existed counts as 1; see CURRENT_SEED_VERSION below for how new seeds get merged
+    // into state that's already out in the wild.
+    seedVersion: 1,
     units: [
       { name: "Unit 1", rent: 0, ownerOccupied: true },
       { name: "Unit 2", rent: 0, ownerOccupied: false },
@@ -493,9 +497,75 @@ const SEED7 = makeProperty({
   ],
   rentCompsDate: "Aug 24, 2026 — rough estimate from El Cerrito/Richmond studio & 1bd comps ($1,700–$2,250/mo range), not yet comped against active listings. Assumes a ~$15,000–$35,000 JADU conversion (efficiency kitchen + separate exterior entrance) NOT reflected in price/closing costs above — treat this tab as post-renovation cash flow only.",
 });
-const DEFAULT_PROPERTIES = [SEED2, SEED3, SEED4, SEED5, SEED6, SEED7];
+const SEED8 = makeProperty({
+  nickname: "Dimm Way (SFH, no rental)",
+  address: "6067 Dimm Way, Richmond, CA 94805",
+  price: 725000,
+  downPct: 3.5,
+  rate: 6.375,
+  termYears: 30,
+  taxAnnual: 9063, // Prop 13 reassessed to purchase price, ~1.25% effective rate for Contra Costa
+  insuranceAnnual: 6500, // High/Very High Fire Hazard Severity Zone per the NHD report, plus an Alquist-Priolo fault zone and a state landslide zone — assume FAIR Plan + DIC wrap territory; confirm with an actual bound quote, not just a quote
+  hoaMonthly: 0,
+  mipUpfrontPct: 1.75,
+  mipAnnualPct: 0.55,
+  closingCostPct: 2.6,
+  maintenancePct: 5,
+  vacancyPct: 5,
+  capexPct: 5, // kept at 5% for apples-to-apples comparison, but note the disclosures flag a leaning retaining wall, undersized seismic anchor bolts, and current subfloor moisture — a structural/geotech opinion could justify raising this
+  mgmtPct: 0,
+  ownerAName: "Jose",
+  ownerBName: "Aurelio",
+  ownerASplitPct: 50,
+  avoidedRentMonthly: 5000,
+  dpaCoversFullDown: true,
+  dpaRatePct: 1,
+  seedVersion: 2,
+  units: [
+    { name: "Whole house — 3bd/2ba, 1,333 sqft (you two live here, no tenant)", rent: 3000, ownerOccupied: true },
+  ],
+  rentCompsDate: "Sep 1, 2026 — listed $725,000 on 8/19/2026. Rent is a rough estimate from East Richmond Heights 3bd comps, not yet comped against active listings. Note: the 3rd bedroom was added without a permit by the 2024 flippers (2bd/2ba originally), so confirm the legal bedroom count before relying on this rent figure.",
+});
+const SEED9 = makeProperty({
+  nickname: "Dimm Way + ADU (detached, rented)",
+  address: "6067 Dimm Way, Richmond, CA 94805",
+  price: 725000,
+  downPct: 3.5,
+  rate: 6.375,
+  termYears: 30,
+  taxAnnual: 9063, // Prop 13 reassessed to purchase price, ~1.25% effective rate for Contra Costa
+  insuranceAnnual: 6500, // same fire/seismic exposure as the SFH tab; a completed ADU would likely push this higher still
+  hoaMonthly: 0,
+  mipUpfrontPct: 1.75,
+  mipAnnualPct: 0.55,
+  closingCostPct: 2.6,
+  maintenancePct: 5,
+  vacancyPct: 5,
+  capexPct: 5,
+  mgmtPct: 0,
+  ownerAName: "Jose",
+  ownerBName: "Aurelio",
+  ownerASplitPct: 50,
+  avoidedRentMonthly: 5000,
+  dpaCoversFullDown: true,
+  dpaRatePct: 1,
+  seedVersion: 2,
+  units: [
+    { name: "Main house — 3bd/2ba, 1,333 sqft (you two live here)", rent: 3000, ownerOccupied: true },
+    { name: "Detached ADU — to be built on the 0.29-acre lot (rented)", rent: 1800, ownerOccupied: false },
+  ],
+  rentCompsDate: "Sep 1, 2026 — $1,800/mo is an estimate for a new detached ADU, not a comped figure. ADU construction cost (commonly ~$150K–$300K in the East Bay) is NOT reflected in the price or closing costs above, so treat this tab as post-build cash flow only. The lot is hillside and sits in a landslide + fault zone, which typically raises both the cost and the permitting difficulty of a detached build.",
+});
+const DEFAULT_PROPERTIES = [SEED2, SEED3, SEED4, SEED5, SEED6, SEED7, SEED8, SEED9];
+// Bump this whenever seeds are added. Saved state (yours and the shared copy) wins over these
+// defaults, so without a merge step a newly added seed would only ever show up for someone who
+// clicked "Reset all properties" — which wipes everyone's edits. Instead, each browser remembers
+// the highest seed version it has already merged and appends only seeds newer than that, matching
+// on nickname so a property that's already there never gets duplicated.
+const CURRENT_SEED_VERSION = 2;
 const STORAGE_KEY = "roiDashboardState.v1";
 const NAME_STORAGE_KEY = "roiDashboardMyName.v1";
+const SEED_VERSION_STORAGE_KEY = "roiDashboardSeedVersion.v1";
 const SYNC_URL = "/api/sync";
 const POLL_INTERVAL_MS = 3000;
 const PUSH_DEBOUNCE_MS = 800;
@@ -510,6 +580,24 @@ const ANIMALS = [
   { name: "Bee", emoji: "🐝", color: "#B8860B" },
   { name: "Dolphin", emoji: "🐬", color: "#2E86AB" },
 ];
+function loadMergedSeedVersion() {
+  try {
+    const raw = window.localStorage.getItem(SEED_VERSION_STORAGE_KEY);
+    if (raw === null) return null; // never merged before — caller decides what that means
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : null;
+  } catch (e) {
+    return null;
+  }
+}
+// Returns the seeds newer than `mergedVersion` that aren't already represented in `existing`
+// (matched by nickname, since ids are regenerated on every page load and so can't be compared).
+function newSeedsToMerge(existing, mergedVersion) {
+  const present = new Set((existing || []).map((p) => (p.nickname || "").trim().toLowerCase()));
+  return DEFAULT_PROPERTIES.filter(
+    (s) => (s.seedVersion || 1) > mergedVersion && !present.has((s.nickname || "").trim().toLowerCase())
+  );
+}
 function loadSavedState() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -569,6 +657,15 @@ function ROIDashboard() {
   const pushTimerRef = useRef(null);
   const applyingRemoteRef = useRef(false);
   const didMountRef = useRef(false);
+  // Seed merging runs exactly once per page load, on the first sync response, so that it operates on
+  // whatever the shared copy actually contains rather than on this browser's stale local snapshot.
+  const didMergeSeedsRef = useRef(false);
+  const mergedSeedVersionRef = useRef(loadMergedSeedVersion() === null ? 1 : loadMergedSeedVersion());
+  // The polling effect below is mounted once, so anything it reads must come from a ref to stay current.
+  const propertiesRef = useRef(properties);
+  useEffect(() => {
+    propertiesRef.current = properties;
+  }, [properties]);
   // The polling interval below is set up once on mount ([] deps) so it doesn't restart every render.
   // That means any function it calls closes over mount-time values forever unless those values are
   // read from a ref instead — a ref's .current is always current, regardless of which stale render's
@@ -607,18 +704,49 @@ function ROIDashboard() {
       if (!res.ok) throw new Error("sync failed");
       const data = await res.json();
       if (Array.isArray(data.onlineUsers)) setOnlineUsers(data.onlineUsers);
+      let nextProps = null;
+      let nextActiveId = null;
       if (Array.isArray(data.properties) && data.properties.length > 0 && (data.updatedAt || 0) > remoteUpdatedAtRef.current) {
         remoteUpdatedAtRef.current = data.updatedAt;
-        applyingRemoteRef.current = true;
-        setProperties(data.properties);
+        nextProps = data.properties;
         if (data.activeId && data.properties.some((p) => p.id === data.activeId)) {
-          setActiveId(data.activeId);
+          nextActiveId = data.activeId;
         }
+      }
+      const merged = mergeNewSeedsOnce(nextProps);
+      if (merged.properties) {
+        // A merge is a local edit, so it must NOT be flagged as remote — the save effect needs to
+        // fire and push the appended property back to the shared copy for everyone else.
+        applyingRemoteRef.current = !merged.didMerge;
+        setProperties(merged.properties);
+        if (nextActiveId) setActiveId(nextActiveId);
       }
       setSyncStatus("synced");
     } catch (e) {
+      // Still merge when the endpoint is unreachable, so a new property shows up offline too; the
+      // save effect will push it the next time sync succeeds.
+      const merged = mergeNewSeedsOnce(null);
+      if (merged.didMerge) {
+        applyingRemoteRef.current = false;
+        setProperties(merged.properties);
+      }
       setSyncStatus("offline");
     }
+  }
+
+  // Appends any seeds newer than the version this browser last merged, exactly once per page load.
+  // `base` is the freshly pulled shared copy when there is one, otherwise this browser's current list.
+  function mergeNewSeedsOnce(base) {
+    if (didMergeSeedsRef.current) return { properties: base, didMerge: false };
+    didMergeSeedsRef.current = true;
+    const start = base || propertiesRef.current;
+    const missing = newSeedsToMerge(start, mergedSeedVersionRef.current);
+    mergedSeedVersionRef.current = CURRENT_SEED_VERSION;
+    try {
+      window.localStorage.setItem(SEED_VERSION_STORAGE_KEY, String(CURRENT_SEED_VERSION));
+    } catch (e) {}
+    if (missing.length === 0) return { properties: base, didMerge: false };
+    return { properties: [...start, ...missing], didMerge: true };
   }
 
   // Heartbeat + pull on load, then keep polling so the other person's edits and online status show up
