@@ -352,19 +352,23 @@ const SEED2 = makeProperty({
   ],
   rentCompsDate: "Aug 10, 2026",
 });
+// Purchased — closed Sep 25, 2026 (Fidelity escrow FCHC-5012601912, Kind Lending FHA). Replaces the
+// pre-offer "El Centro Rd (duplex)" scenario in saved/shared state via replacesNickname (see seed merge below).
 const SEED3 = makeProperty({
-  nickname: "El Centro Rd (duplex)",
+  nickname: "El Centro Rd (purchased)",
+  replacesNickname: "El Centro Rd (duplex)",
+  seedVersion: 3,
   address: "679 El Centro Rd, El Sobrante, CA 94803",
-  price: 975000,
-  downPct: 3.5,
-  rate: 6.375,
+  price: 1005000, // contract price; appraised at $1,010,000
+  downPct: 3.5, // $35,175 FHA minimum down
+  rate: 6.375, // note rate, locked Sep 3. A 2-1 buydown (paid from the seller credit) makes year 1 4.375% and year 2 5.375% — not modeled here, so years 1–2 cash flow is better than shown
   termYears: 30,
-  taxAnnual: 12188, // Prop 13 reassessed, ~1.25% effective rate for Contra Costa
-  insuranceAnnual: 3600, // conservative placeholder — confirm with an actual quote; wildfire zone risk applies here too
+  taxAnnual: 12563, // estimate: ~1.25% of $1,005,000 incl. ~$1,600/yr of fixed direct assessments (Mello-Roos etc.) — replace with the first actual tax bill
+  insuranceAnnual: 3600, // placeholder — the actual AAA premium (policy bound 9/25) is on the AAA invoice. Property is NOT in a fire hazard severity zone per the NHD
   hoaMonthly: 0,
   mipUpfrontPct: 1.75,
   mipAnnualPct: 0.55,
-  closingCostPct: 2.6,
+  closingCostPct: 2.07, // calibrated so cash to close ≈ $55,997 (Sep 3 locked estimate): net of the $32,000 seller credit, and includes ~$12,252 of credit-card payoffs rolled into closing. The final Closing Disclosure governs
   maintenancePct: 5,
   vacancyPct: 5,
   capexPct: 5,
@@ -373,13 +377,13 @@ const SEED3 = makeProperty({
   ownerBName: "Aurelio",
   ownerASplitPct: 50,
   avoidedRentMonthly: 5000,
-  dpaCoversFullDown: true,
-  dpaRatePct: 1,
+  dpaCoversFullDown: false, // no DPA was used — the down payment came out of cash to close
+  dpaRatePct: 0,
   units: [
-    { name: "Front house — 3bd/2ba, remodeled (you two live here)", rent: 3000, ownerOccupied: true },
-    { name: "Rear house — 3bd/2ba, remodeled (rented)", rent: 3000, ownerOccupied: false },
+    { name: "Front house — original home, remodeled (you two live here)", rent: 3000, ownerOccupied: true },
+    { name: "Rear ADU — attached, permit BIR24-004821 not yet finaled (shared utility meters)", rent: 3000, ownerOccupied: false },
   ],
-  rentCompsDate: "Aug 10, 2026",
+  rentCompsDate: "Aug 10, 2026 — rent is still the pre-purchase estimate. The ADU permit hasn't been finaled, so confirm with Contra Costa DCD before counting on rental income; utilities aren't separately metered, so tenant utilities fall on you unless the lease bills them back.",
 });
 const SEED4 = makeProperty({
   nickname: "Hilltop Dr (SFH, no rental)",
@@ -561,8 +565,9 @@ const DEFAULT_PROPERTIES = [SEED2, SEED3, SEED4, SEED5, SEED6, SEED7, SEED8, SEE
 // defaults, so without a merge step a newly added seed would only ever show up for someone who
 // clicked "Reset all properties" — which wipes everyone's edits. Instead, each browser remembers
 // the highest seed version it has already merged and appends only seeds newer than that, matching
-// on nickname so a property that's already there never gets duplicated.
-const CURRENT_SEED_VERSION = 2;
+// on nickname so a property that's already there never gets duplicated. A newer seed can also set
+// replacesNickname to overwrite an outdated scenario in place (keeping its id) instead of appending.
+const CURRENT_SEED_VERSION = 3;
 const STORAGE_KEY = "roiDashboardState.v1";
 const NAME_STORAGE_KEY = "roiDashboardMyName.v1";
 const SEED_VERSION_STORAGE_KEY = "roiDashboardSeedVersion.v1";
@@ -597,6 +602,21 @@ function newSeedsToMerge(existing, mergedVersion) {
   return DEFAULT_PROPERTIES.filter(
     (s) => (s.seedVersion || 1) > mergedVersion && !present.has((s.nickname || "").trim().toLowerCase())
   );
+}
+// Swaps any saved property whose nickname a newer seed's replacesNickname points at for that seed,
+// keeping the saved id so the active tab doesn't jump.
+function applySeedReplacements(existing, mergedVersion) {
+  const norm = (s) => (s || "").trim().toLowerCase();
+  let replaced = false;
+  const properties = (existing || []).map((p) => {
+    const seed = DEFAULT_PROPERTIES.find(
+      (s) => (s.seedVersion || 1) > mergedVersion && s.replacesNickname && norm(s.replacesNickname) === norm(p.nickname)
+    );
+    if (!seed) return p;
+    replaced = true;
+    return { ...seed, id: p.id };
+  });
+  return { properties, replaced };
 }
 function loadSavedState() {
   try {
@@ -739,13 +759,13 @@ function ROIDashboard() {
   function mergeNewSeedsOnce(base) {
     if (didMergeSeedsRef.current) return { properties: base, didMerge: false };
     didMergeSeedsRef.current = true;
-    const start = base || propertiesRef.current;
+    const { properties: start, replaced } = applySeedReplacements(base || propertiesRef.current, mergedSeedVersionRef.current);
     const missing = newSeedsToMerge(start, mergedSeedVersionRef.current);
     mergedSeedVersionRef.current = CURRENT_SEED_VERSION;
     try {
       window.localStorage.setItem(SEED_VERSION_STORAGE_KEY, String(CURRENT_SEED_VERSION));
     } catch (e) {}
-    if (missing.length === 0) return { properties: base, didMerge: false };
+    if (missing.length === 0 && !replaced) return { properties: base, didMerge: false };
     return { properties: [...start, ...missing], didMerge: true };
   }
 
